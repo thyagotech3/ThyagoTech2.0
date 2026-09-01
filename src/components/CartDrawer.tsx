@@ -1,7 +1,7 @@
 import React from "react";
 import { X, Trash2, ShoppingBag, ArrowUpRight, MessageCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { CartItem } from "../types";
+import { CartItem, StoreSettings } from "../types";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface CartDrawerProps {
   cartItems: CartItem[];
   onUpdateQuantity: (productId: string, action: "increase" | "decrease", color?: string) => void;
   onRemoveItem: (productId: string, color?: string) => void;
+  storeSettings?: StoreSettings;
 }
 
 export default function CartDrawer({ 
@@ -16,7 +17,8 @@ export default function CartDrawer({
   onClose, 
   cartItems, 
   onUpdateQuantity, 
-  onRemoveItem 
+  onRemoveItem,
+  storeSettings
 }: CartDrawerProps) {
   
   // Compute totals
@@ -35,7 +37,12 @@ export default function CartDrawer({
   const handleWhatsAppCheckout = () => {
     if (cartItems.length === 0) return;
 
-    const phoneNumber = "5581997073882"; // Thyago Tech phone number (81 99707-3882)
+    let rawPhone = storeSettings?.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "5581997073882";
+    if (rawPhone.length === 10 || rawPhone.length === 11) {
+      rawPhone = `55${rawPhone}`;
+    }
+    const phoneNumber = rawPhone;
+    const storeName = storeSettings?.storeName || "Thyago Tech";
     let itemsText = "";
     
     cartItems.forEach((item, idx) => {
@@ -43,7 +50,7 @@ export default function CartDrawer({
       itemsText += `${idx + 1}. *${item.product.name}*${colorInfo}\n   Qtd: ${item.quantity}x • Unidade: ${formatPrice(item.product.price)} • Subtotal: ${formatPrice(item.product.price * item.quantity)}\n`;
     });
 
-    const message = `Olá! Montei meu pedido no site *Thyago Tech* e gostaria de finalizar a compra por aqui!
+    const message = `Olá! Montei meu pedido no site *${storeName}* e gostaria de finalizar a compra por aqui!
     
 📦 *RESUMO DO PEDIDO:*
 ----------------------------------

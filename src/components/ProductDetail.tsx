@@ -3,16 +3,24 @@ import {
   ArrowLeft, Heart, ShoppingCart, MessageCircle, 
   ChevronRight, Sparkles, AlertTriangle, Check, Shield, 
   Target, Feather, Lightbulb, Maximize, Palette, Volume2, 
-  Mic, Zap, Video, Eye, Keyboard, Play, Film
+  Mic, Zap, Video, Eye, Keyboard, Play, Film, Smartphone,
+  Tag, Laptop, Gamepad2, Layers
 } from "lucide-react";
-import { Product } from "../types";
+import { Product, StoreSettings } from "../types";
 
 interface ProductDetailProps {
   product: Product;
   allProducts: Product[];
   onBack: () => void;
   onNavigateToProduct: (productId: string) => void;
+  onNavigateToCategory?: (options: {
+    group?: "Todos" | "Celular" | "Pc" | "Videogame";
+    filter?: string;
+    brand?: string;
+    model?: string;
+  }) => void;
   onAddToCart: (product: Product, quantity: number, selectedColor?: string) => void;
+  storeSettings?: StoreSettings;
 }
 
 // Map string icon names to Lucide icon components dynamically
@@ -32,12 +40,139 @@ const IconMap: { [key: string]: React.ComponentType<any> } = {
   Keyboard
 };
 
+export interface ProductTagItem {
+  id: string;
+  label: string;
+  type: "group" | "category" | "model";
+  group?: "Todos" | "Celular" | "Pc" | "Videogame";
+  filter?: string;
+  model?: string;
+}
+
+/**
+ * Extracts strictly selected and existing tags for this product:
+ * 1. Selected device group (Celular, PC, Videogames)
+ * 2. Selected categories (Capas, Películas, Carregadores, Mouse, etc.)
+ * 3. Selected compatible phone models (if any)
+ */
+function extractProductTags(p: Product): ProductTagItem[] {
+  const tags: ProductTagItem[] = [];
+  const addedKeys = new Set<string>();
+
+  const addTag = (tag: ProductTagItem) => {
+    const key = `${tag.type}-${tag.label.toLowerCase().trim()}`;
+    if (!addedKeys.has(key) && tag.label.trim()) {
+      addedKeys.add(key);
+      tags.push(tag);
+    }
+  };
+
+  const pCats = (p.categories && p.categories.length > 0 ? p.categories : [p.category]).filter(Boolean);
+
+  // 1. Device Group (Celular, Pc, Videogames)
+  const hasCelularGroup = pCats.some((c) => c.toLowerCase() === "celular");
+  const hasPcGroup = pCats.some((c) => c.toLowerCase() === "pc");
+  const hasVideoGameGroup = pCats.some((c) => c.toLowerCase() === "videogames" || c.toLowerCase() === "videogame");
+
+  const isCelularCategory = pCats.some((c) => ["capas", "peliculas", "películas", "fones", "carregadores", "cabos"].includes(c.toLowerCase()));
+  const isPcCategory = pCats.some((c) => ["mouse", "teclado", "headset", "fone"].includes(c.toLowerCase()));
+  const isVideogameCategory = pCats.some((c) => ["camisetas (novo)", "tênis (novo)", "tenis (novo)"].includes(c.toLowerCase()));
+
+  if (hasCelularGroup || (!hasPcGroup && !hasVideoGameGroup && isCelularCategory)) {
+    addTag({
+      id: "group-celular",
+      label: "Celular",
+      type: "group",
+      group: "Celular",
+      filter: "Todos"
+    });
+  } else if (hasPcGroup || (!hasCelularGroup && !hasVideoGameGroup && isPcCategory)) {
+    addTag({
+      id: "group-pc",
+      label: "PC",
+      type: "group",
+      group: "Pc",
+      filter: "Todos"
+    });
+  } else if (hasVideoGameGroup || isVideogameCategory) {
+    addTag({
+      id: "group-videogame",
+      label: "Videogames",
+      type: "group",
+      group: "Videogame",
+      filter: "Todos"
+    });
+  }
+
+  // 2. Specific Selected Categories on Product
+  pCats.forEach((cat) => {
+    const raw = cat.trim();
+    const cLower = raw.toLowerCase();
+    
+    // Skip general group names if already added
+    if (cLower === "celular" || cLower === "pc" || cLower === "videogames" || cLower === "videogame") {
+      return;
+    }
+
+    let targetGroup: "Todos" | "Celular" | "Pc" | "Videogame" = "Todos";
+    let targetFilter = raw;
+
+    if (["capas", "peliculas", "películas", "fones", "carregadores", "cabos"].includes(cLower)) {
+      targetGroup = "Celular";
+      if (cLower === "capas") targetFilter = "Capas";
+      else if (cLower === "peliculas" || cLower === "películas") targetFilter = "películas";
+      else if (cLower === "carregadores") targetFilter = "Carregadores";
+      else if (cLower === "cabos") targetFilter = "Cabos";
+      else if (cLower === "fones") targetFilter = "Fones";
+    } else if (["mouse", "teclado", "headset", "fone"].includes(cLower)) {
+      targetGroup = "Pc";
+      if (cLower === "mouse") targetFilter = "Mouse";
+      else if (cLower === "teclado") targetFilter = "Teclado";
+      else if (cLower === "headset") targetFilter = "Headset";
+      else if (cLower === "fone") targetFilter = "Fone";
+    } else if (["camisetas (novo)", "tênis (novo)", "tenis (novo)"].includes(cLower)) {
+      targetGroup = "Videogame";
+    }
+
+    addTag({
+      id: `cat-${raw}`,
+      label: raw,
+      type: "category",
+      group: targetGroup,
+      filter: targetFilter
+    });
+  });
+
+  // 3. Compatible Phone Models if assigned to the product
+  if (p.compatibleModels && Array.isArray(p.compatibleModels) && p.compatibleModels.length > 0) {
+    const primaryCat = pCats.find((c) => ["capas", "peliculas", "películas"].includes(c.toLowerCase())) || "Capas";
+    const filterCat = primaryCat.toLowerCase().includes("pelic") ? "películas" : "Capas";
+
+    p.compatibleModels.forEach((model) => {
+      if (model && model.trim()) {
+        addTag({
+          id: `model-${model.trim()}`,
+          label: model.trim(),
+          type: "model",
+          group: "Celular",
+          filter: filterCat,
+          model: model.trim()
+        });
+      }
+    });
+  }
+
+  return tags;
+}
+
 export default function ProductDetail({ 
   product, 
   allProducts, 
   onBack, 
   onNavigateToProduct, 
-  onAddToCart 
+  onNavigateToCategory,
+  onAddToCart,
+  storeSettings
 }: ProductDetailProps) {
   const [activeMediaIdx, setActiveMediaIdx] = useState(0);
   const [liked, setLiked] = useState(false);
@@ -46,6 +181,9 @@ export default function ProductDetail({
   );
   const [quantity, setQuantity] = useState(1);
   const [copied, setCopied] = useState(false);
+
+  // Extract all tag cards for this product
+  const productTags = extractProductTags(product);
 
   // Combine images and videos for full interactive gallery
   const mediaList: { type: "image" | "video"; src: string }[] = [
@@ -59,20 +197,6 @@ export default function ProductDetail({
 
   const currentMedia = mediaList[activeMediaIdx] || mediaList[0];
 
-  // Phone brand and model selection for Capas
-  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
-  const [modalStep, setModalStep] = useState<1 | 2>(1);
-  const [selectedBrand, setSelectedBrand] = useState<string>("Apple");
-  const [selectedModel, setSelectedModel] = useState<string>("15 Plus");
-
-  const PHONE_BRANDS = ["Apple", "Samsung", "Xiaomi", "Motorola"];
-  const PHONE_MODELS: { [key: string]: string[] } = {
-    "Apple": ["11", "12", "13", "14", "14 Pro", "15", "15 Plus", "15 Pro", "15 Pro Max", "16", "16 Pro", "16 Pro Max"],
-    "Samsung": ["Galaxy S23", "Galaxy S23 Ultra", "Galaxy S24", "Galaxy S24 Ultra", "Galaxy A54", "Galaxy A55"],
-    "Xiaomi": ["Redmi Note 12", "Redmi Note 13", "Pocophone X6", "Xiaomi 13", "Xiaomi 14"],
-    "Motorola": ["Moto G54", "Moto G84", "Edge 40", "Edge 50 Pro"]
-  };
-
   // Format currency
   const formatPrice = (value: number) => {
     return value.toLocaleString("pt-BR", {
@@ -83,18 +207,20 @@ export default function ProductDetail({
 
   // WhatsApp order URL generation
   const handleWhatsAppOrder = () => {
-    const phoneNumber = "5581997073882"; // Thyago Tech phone number (81 99707-3882)
+    let rawPhone = storeSettings?.whatsappNumber ? storeSettings.whatsappNumber.replace(/\D/g, "") : "5581997073882";
+    if (rawPhone.length === 10 || rawPhone.length === 11) {
+      rawPhone = `55${rawPhone}`;
+    }
+    const phoneNumber = rawPhone;
+    const storeName = storeSettings?.storeName || "Thyago Tech";
     const colorText = selectedColor ? `\n🎨 *Variação:* ${selectedColor}` : "";
     const promoText = product.isPromoActive ? ` (De ${formatPrice(product.originalPrice)} por ${formatPrice(product.price)})` : "";
-    const phoneModelText = selectedBrand && selectedModel ? `\n📱 *Modelo de Celular:* ${selectedBrand} - ${selectedModel}` : "";
     
-    const catStr = product.categories && product.categories.length > 0 ? product.categories.join(", ") : product.category;
-    const message = `Olá! Vi o produto *${product.name}* no site *Thyago Tech* e gostaria de encomendá-lo!
+    const message = `Olá! Vi o produto *${product.name}* no site *${storeName}* e gostaria de encomendá-lo!
     
 🛒 *Produto:* ${product.name}
-🏷️ *Preço:* ${formatPrice(product.price)}${promoText}${colorText}${phoneModelText}
+🏷️ *Preço:* ${formatPrice(product.price)}${promoText}${colorText}
 📦 *Quantidade:* ${quantity}
-✨ *Categorias:* ${catStr}
     
 Por favor, me confirme a disponibilidade!`;
 
@@ -133,15 +259,75 @@ Por favor, me confirme a disponibilidade!`;
         </div>
       </div>
 
-      <div className="max-w-md mx-auto px-4 pt-4 flex flex-col gap-5">
+      <div className="max-w-md mx-auto px-4 pt-4 flex flex-col gap-4">
         {/* Breadcrumb path for Mobile strictly as in Image 2 */}
         <div className="flex items-center gap-1 text-[10px] text-gray-400">
           <span className="hover:text-emerald-400 cursor-pointer" onClick={onBack}>Home</span>
           <ChevronRight className="w-2.5 h-2.5" />
-          <span className="hover:text-emerald-300 cursor-pointer">{product.categories && product.categories.length > 0 ? product.categories.join(" • ") : product.category}</span>
+          <span 
+            className="hover:text-emerald-300 cursor-pointer"
+            onClick={() => {
+              const primary = product.categories && product.categories.length > 0 ? product.categories[0] : product.category;
+              if (onNavigateToCategory && primary) {
+                onNavigateToCategory({ filter: primary });
+              } else {
+                onBack();
+              }
+            }}
+          >
+            {product.categories && product.categories.length > 0 ? product.categories.join(" • ") : product.category}
+          </span>
           <ChevronRight className="w-2.5 h-2.5" />
           <span className="text-emerald-400 font-medium truncate max-w-[150px]">{product.name}</span>
         </div>
+
+        {/* PRODUCT TAGS / MINI-CARDS ROW (ABOVE THE PHOTO) */}
+        {productTags.length > 0 && (
+          <div 
+            id="product-tags-row"
+            className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none flex-wrap"
+          >
+            {productTags.map((tag) => {
+              // Choose color & icon style per tag type
+              let bgClass = "bg-[#091522] border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/80 hover:border-emerald-400 hover:text-white";
+              let IconComponent = Tag;
+
+              if (tag.type === "group") {
+                bgClass = "bg-[#06181e] border-teal-500/40 text-teal-300 hover:bg-teal-950/80 hover:border-teal-400 hover:text-teal-100";
+                IconComponent = tag.label === "Celular" ? Smartphone : tag.label === "PC" ? Laptop : tag.label === "Videogames" ? Gamepad2 : Layers;
+              } else if (tag.type === "model") {
+                bgClass = "bg-[#071d18] border-emerald-400/50 text-emerald-200 font-bold hover:bg-emerald-900/90 hover:border-emerald-300 hover:text-white";
+                IconComponent = Smartphone;
+              } else if (tag.type === "category") {
+                bgClass = "bg-[#0a1724] border-emerald-500/35 text-emerald-300 hover:bg-[#0f2538] hover:border-emerald-400 hover:text-white";
+                IconComponent = Tag;
+              }
+
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => {
+                    if (onNavigateToCategory) {
+                      onNavigateToCategory({
+                        group: tag.group,
+                        filter: tag.filter,
+                        model: tag.model
+                      });
+                    } else if (onBack) {
+                      onBack();
+                    }
+                  }}
+                  title={`Filtrar vitrine por "${tag.label}"`}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9.5px] font-bold tracking-tight shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer select-none group ${bgClass}`}
+                >
+                  <IconComponent className="w-2.5 h-2.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity" />
+                  <span className="whitespace-nowrap">{tag.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Product Media Stage Card (Photos and Videos) */}
         <div className="relative rounded-2xl border border-emerald-950/40 bg-[#091520]/80 p-3 overflow-hidden shadow-lg">
@@ -229,77 +415,8 @@ Por favor, me confirme a disponibilidade!`;
 
         {/* Product Meta Header Information */}
         <div className="flex flex-col gap-1.5">
-          {/* Category Tag */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {product.categories && product.categories.length > 0 ? (
-              product.categories.map((cat) => {
-                const isCapas = cat.toLowerCase().includes("capas");
-                return (
-                  <div key={cat} className="flex items-center gap-1.5 flex-wrap">
-                    <span
-                      onClick={() => {
-                        if (isCapas) {
-                          setIsPhoneModalOpen(true);
-                          setModalStep(1);
-                        }
-                      }}
-                      className={`h-6 inline-flex items-center justify-center gap-1 bg-emerald-950/60 border border-emerald-800/40 text-emerald-400 text-[10px] uppercase tracking-wider font-extrabold px-2.5 rounded-md transition-all ${
-                        isCapas ? "cursor-pointer hover:border-emerald-500 hover:bg-emerald-900/40 shadow-sm" : ""
-                      }`}
-                    >
-                      {cat} {isCapas && "📱"}
-                    </span>
-
-                    {isCapas && (
-                      selectedBrand && selectedModel ? (
-                        <>
-                          <span className="h-6 inline-flex items-center justify-center gap-1.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold px-2.5 rounded-md shadow-sm">
-                            <span>{selectedBrand} • {selectedModel}</span>
-                            <button 
-                              onClick={() => {
-                                setSelectedBrand("");
-                                setSelectedModel("");
-                              }}
-                              className="text-emerald-400 hover:text-white font-extrabold cursor-pointer leading-none"
-                              title="Remover modelo"
-                            >
-                              ✕
-                            </button>
-                          </span>
-                          <button
-                            onClick={() => {
-                              setIsPhoneModalOpen(true);
-                              setModalStep(1);
-                            }}
-                            className="h-6 inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-[10px] font-bold px-2.5 rounded-md cursor-pointer whitespace-nowrap transition-all shadow-sm"
-                          >
-                            Mudar Modelo
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setIsPhoneModalOpen(true);
-                            setModalStep(1);
-                          }}
-                          className="h-6 inline-flex items-center justify-center bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 text-[10px] font-bold px-2.5 rounded-md cursor-pointer whitespace-nowrap transition-all shadow-sm"
-                        >
-                          Escolher Modelo
-                        </button>
-                      )
-                    )}
-                  </div>
-                );
-              })
-            ) : (
-              <span className="inline-block bg-emerald-950/60 border border-emerald-800/40 text-emerald-400 text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-1 rounded-md">
-                {product.category}
-              </span>
-            )}
-          </div>
-
           {/* Product Title */}
-          <h1 className="text-2xl font-black text-white leading-tight tracking-tight mt-1">
+          <h1 className="text-2xl font-black text-white leading-tight tracking-tight">
             {product.name}
           </h1>
 
@@ -322,9 +439,11 @@ Por favor, me confirme a disponibilidade!`;
             <span className="text-3xl font-black text-emerald-400 tracking-tight">
               {formatPrice(product.price)}
             </span>
-            <div className="flex items-center gap-1 text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 font-bold">
-              <span>Em estoque</span>
-            </div>
+            {product.showStock && (
+              <div className="flex items-center gap-1 text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 font-bold">
+                <span>Em estoque</span>
+              </div>
+            )}
           </div>
           <p className="text-[10px] text-gray-400 mt-1 font-medium">
             Em até 6x de {formatPrice(product.price / 6)} sem juros
@@ -366,7 +485,9 @@ Por favor, me confirme a disponibilidade!`;
                       }}
                     />
                     <span>{c.color}</span>
-                    <span className="text-[10px] text-gray-500">({c.stock} un)</span>
+                    {product.showStock && (
+                      <span className="text-[10px] text-gray-500">({c.stock} un)</span>
+                    )}
                   </button>
                 );
               })}
@@ -374,31 +495,51 @@ Por favor, me confirme a disponibilidade!`;
           </div>
         )}
 
+        {/* Compatible Models List (for cases & films) */}
+        {product.compatibleModels && product.compatibleModels.length > 0 && (
+          <div className="flex flex-col gap-2 p-3 rounded-xl bg-[#081520]/70 border border-emerald-500/30">
+            <div className="flex items-center gap-1.5 text-emerald-400">
+              <Smartphone className="w-3.5 h-3.5" />
+              <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                Modelos Compatíveis ({product.compatibleModels.length}):
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {product.compatibleModels.map((model, idx) => (
+                <span
+                  key={idx}
+                  className="bg-emerald-950/80 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-xs"
+                >
+                  📱 {model}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Quantity and Order Buttons */}
         <div className="flex flex-col gap-3 mt-2">
           {/* Quantity selector */}
-          {product.showStock && (
-            <div className="flex items-center justify-between bg-[#08121a] p-2.5 rounded-xl border border-emerald-950/40">
-              <span className="text-xs font-bold text-gray-300">Quantidade</span>
-              <div className="flex items-center gap-3">
-                <button
-                  disabled={quantity <= 1}
-                  onClick={() => setQuantity(quantity - 1)}
-                  className="w-8 h-8 rounded-lg bg-gray-800/80 text-white font-bold flex items-center justify-center hover:bg-gray-700 transition-colors disabled:opacity-40"
-                >
-                  -
-                </button>
-                <span className="text-sm font-black text-emerald-400 min-w-4 text-center">{quantity}</span>
-                <button
-                  disabled={quantity >= currentStock}
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="w-8 h-8 rounded-lg bg-gray-800/80 text-white font-bold flex items-center justify-center hover:bg-gray-700 transition-colors disabled:opacity-40"
-                >
-                  +
-                </button>
-              </div>
+          <div className="flex items-center justify-between bg-[#08121a] p-2.5 rounded-xl border border-emerald-950/40">
+            <span className="text-xs font-bold text-gray-300">Quantidade</span>
+            <div className="flex items-center gap-3">
+              <button
+                disabled={quantity <= 1}
+                onClick={() => setQuantity(quantity - 1)}
+                className="w-8 h-8 rounded-lg bg-gray-800/80 text-white font-bold flex items-center justify-center hover:bg-gray-700 transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                -
+              </button>
+              <span className="text-sm font-black text-emerald-400 min-w-4 text-center">{quantity}</span>
+              <button
+                disabled={product.showStock && currentStock > 0 && quantity >= currentStock}
+                onClick={() => setQuantity(quantity + 1)}
+                className="w-8 h-8 rounded-lg bg-gray-800/80 text-white font-bold flex items-center justify-center hover:bg-gray-700 transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                +
+              </button>
             </div>
-          )}
+          </div>
 
           {/* ADD TO BAG and PEDIR NO WHATSAPP Action buttons strictly as requested */}
           <div className="grid grid-cols-1 gap-2.5">
@@ -526,96 +667,6 @@ Por favor, me confirme a disponibilidade!`;
           </div>
         </div>
       </div>
-
-      {/* Phone Brand & Model Selection Modal */}
-      {isPhoneModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#07111b] border border-emerald-500/40 rounded-2xl w-full max-w-md p-5 flex flex-col gap-4 shadow-2xl text-white">
-            <div className="flex items-center justify-between border-b border-emerald-950 pb-3">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest">
-                  Passo {modalStep} de 2
-                </span>
-                <h3 className="text-sm font-bold text-white">
-                  {modalStep === 1 ? "Escolha a Marca do Celular" : `Escolha o Modelo (${selectedBrand})`}
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsPhoneModalOpen(false)}
-                className="text-gray-400 hover:text-white text-sm font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {modalStep === 1 ? (
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-2.5">
-                  {PHONE_BRANDS.map((brand) => (
-                    <button
-                      key={brand}
-                      onClick={() => setSelectedBrand(brand)}
-                      className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer flex items-center justify-between ${
-                        selectedBrand === brand
-                          ? "bg-emerald-500 text-black border-emerald-400 shadow-md shadow-emerald-500/20"
-                          : "bg-[#0b1620] text-gray-200 border-emerald-950 hover:border-emerald-500/40"
-                      }`}
-                    >
-                      <span>{brand}</span>
-                      {selectedBrand === brand && <Check className="w-4 h-4" />}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex justify-end pt-2">
-                  <button
-                    disabled={!selectedBrand}
-                    onClick={() => setModalStep(2)}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-500 text-black text-xs font-black hover:bg-emerald-400 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                  >
-                    Avançar ➔
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
-                  {(PHONE_MODELS[selectedBrand] || []).map((model) => (
-                    <button
-                      key={model}
-                      onClick={() => setSelectedModel(model)}
-                      className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer flex items-center justify-between ${
-                        selectedModel === model
-                          ? "bg-emerald-500 text-black border-emerald-400 shadow-md shadow-emerald-500/20"
-                          : "bg-[#0b1620] text-gray-200 border-emerald-950 hover:border-emerald-500/40"
-                      }`}
-                    >
-                      <span>{model}</span>
-                      {selectedModel === model && <Check className="w-4 h-4" />}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <button
-                    onClick={() => setModalStep(1)}
-                    className="px-4 py-2 rounded-xl bg-[#0b1620] border border-emerald-950 text-gray-300 text-xs font-bold hover:text-white cursor-pointer"
-                  >
-                    ← Voltar
-                  </button>
-                  <button
-                    disabled={!selectedModel}
-                    onClick={() => setIsPhoneModalOpen(false)}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-500 text-black text-xs font-black hover:bg-emerald-400 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-                  >
-                    Concluir ✓
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

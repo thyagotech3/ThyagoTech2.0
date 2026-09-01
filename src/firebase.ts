@@ -17,7 +17,7 @@ import {
   onSnapshot, 
   serverTimestamp
 } from "firebase/firestore";
-import { Product, BannerItem } from "./types";
+import { Product, BannerItem, StoreSettings, defaultStoreSettings } from "./types";
 import { initialProducts } from "./initialProducts";
 import { initialBanners } from "./initialBanners";
 import { compressImage } from "./utils/imageCompressor";
@@ -287,6 +287,70 @@ export async function saveBannersToFirestore(banners: BannerItem[]): Promise<voi
       updatedAt: serverTimestamp()
     }, { merge: true });
   }
+}
+
+/**
+ * Real-time listener for Store Settings
+ */
+export function subscribeToSettings(
+  onSettingsUpdate: (settings: StoreSettings) => void,
+  onError?: (error: Error) => void
+) {
+  const settingsDoc = doc(db, "settings", "general");
+
+  return onSnapshot(
+    settingsDoc,
+    (docSnap) => {
+      if (!docSnap.exists()) {
+        onSettingsUpdate(defaultStoreSettings);
+        return;
+      }
+
+      const data = docSnap.data();
+      onSettingsUpdate({
+        storeName: data.storeName || defaultStoreSettings.storeName,
+        storeTagline: data.storeTagline !== undefined ? data.storeTagline : defaultStoreSettings.storeTagline,
+        logoUrl: data.logoUrl || "",
+        logoZoom: typeof data.logoZoom === "number" ? data.logoZoom : (defaultStoreSettings.logoZoom || 100),
+        logoFit: data.logoFit === "contain" ? "contain" : "cover",
+        whatsappNumber: data.whatsappNumber || defaultStoreSettings.whatsappNumber,
+        businessHours: data.businessHours !== undefined ? data.businessHours : defaultStoreSettings.businessHours,
+        instagramHandle: data.instagramHandle !== undefined ? data.instagramHandle : defaultStoreSettings.instagramHandle,
+        pixKey: data.pixKey !== undefined ? data.pixKey : defaultStoreSettings.pixKey,
+        deliveryInfo: data.deliveryInfo !== undefined ? data.deliveryInfo : defaultStoreSettings.deliveryInfo,
+        address: data.address !== undefined ? data.address : defaultStoreSettings.address,
+        promoBannerUrl: data.promoBannerUrl || "",
+        promoBanners: data.promoBanners || []
+      });
+    },
+    (err) => {
+      console.warn("Notice: Firestore settings offline or initial sync:", err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Save store settings to Firestore
+ */
+export async function saveSettingsToFirestore(settings: StoreSettings): Promise<void> {
+  const docRef = doc(db, "settings", "general");
+  await setDoc(docRef, {
+    storeName: settings.storeName || defaultStoreSettings.storeName,
+    storeTagline: settings.storeTagline || "",
+    logoUrl: settings.logoUrl || "",
+    logoZoom: typeof settings.logoZoom === "number" ? settings.logoZoom : 100,
+    logoFit: settings.logoFit || "cover",
+    whatsappNumber: settings.whatsappNumber || defaultStoreSettings.whatsappNumber,
+    businessHours: settings.businessHours || "",
+    instagramHandle: settings.instagramHandle || "",
+    pixKey: settings.pixKey || "",
+    deliveryInfo: settings.deliveryInfo || "",
+    address: settings.address || "",
+    promoBannerUrl: settings.promoBannerUrl || "",
+    promoBanners: settings.promoBanners || [],
+    updatedAt: serverTimestamp()
+  }, { merge: true });
 }
 
 /**

@@ -132,6 +132,7 @@ export const initialProducts: Product[] = [
     highlightPoints: [
       { icon: "Shield", title: "Ultra Resistente", desc: "Proteção contra quedas de até 3 metros" }
     ],
+    compatibleModels: ["iPhone 14", "iPhone 14 Pro", "iPhone 15", "iPhone 15 Pro", "iPhone 15 Pro Max"],
     isBestSeller: true
   },
   {
@@ -156,6 +157,7 @@ export const initialProducts: Product[] = [
     highlightPoints: [
       { icon: "Eye", title: "Filtro Anti-Espião", desc: "Privacidade garantida para o seu visor" }
     ],
+    compatibleModels: ["iPhone 13", "iPhone 14", "iPhone 15", "Galaxy S23", "Galaxy S24"],
     isBestSeller: false
   },
   {

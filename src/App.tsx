@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Search, ShoppingBag, Grid, RefreshCw, Layers, ArrowRight, ArrowLeft, ShieldAlert, Lock, CloudCheck, Sparkles } from "lucide-react";
+import { Search, ShoppingBag, Grid, RefreshCw, Layers, ArrowRight, ArrowLeft, ShieldAlert, Lock, CloudCheck, Sparkles, Star } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "firebase/auth";
 
-import { Product, CartItem, BannerItem } from "./types";
+import { Product, CartItem, BannerItem, StoreSettings, defaultStoreSettings } from "./types";
 import { initialProducts } from "./initialProducts";
 import { initialBanners } from "./initialBanners";
+import { PHONE_BRANDS, PHONE_MODELS, isPhoneModelCategory } from "./phoneModels";
 import { 
   auth, 
   onAuthStateChanged, 
@@ -13,9 +14,11 @@ import {
   logoutUser, 
   subscribeToProducts, 
   subscribeToBanners, 
+  subscribeToSettings,
   saveProductToFirestore, 
   deleteProductFromFirestore,
   saveBannersToFirestore,
+  saveSettingsToFirestore,
   ADMIN_EMAIL
 } from "./firebase";
 
@@ -38,6 +41,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [banners, setBanners] = useState<BannerItem[]>([]);
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(defaultStoreSettings);
 
   // --- UI Navigation & Filter States ---
   const [currentView, setCurrentView] = useState<"home" | "detail" | "admin" | "category">("home");
@@ -48,19 +52,11 @@ export default function App() {
   const [selectedFilter, setSelectedFilter] = useState<string>("Todos");
   const [activeDropdown, setActiveDropdown] = useState<"celular" | "pc" | "mais" | "groupSelect" | "filterSelect" | null>(null);
 
-  // Phone selection modal state for Capas category
+  // Phone selection modal state for Capas & Películas categories
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState<1 | 2>(1);
   const [selectedBrand, setSelectedBrand] = useState<string>("Apple");
-  const [selectedModel, setSelectedModel] = useState<string>("15 Plus");
-
-  const PHONE_BRANDS = ["Apple", "Samsung", "Xiaomi", "Motorola"];
-  const PHONE_MODELS: { [key: string]: string[] } = {
-    "Apple": ["11", "12", "13", "14", "14 Pro", "15", "15 Plus", "15 Pro", "15 Pro Max", "16", "16 Pro", "16 Pro Max"],
-    "Samsung": ["Galaxy S23", "Galaxy S23 Ultra", "Galaxy S24", "Galaxy S24 Ultra", "Galaxy A54", "Galaxy A55"],
-    "Xiaomi": ["Redmi Note 12", "Redmi Note 13", "Pocophone X6", "Xiaomi 13", "Xiaomi 14"],
-    "Motorola": ["Moto G54", "Moto G84", "Edge 40", "Edge 50 Pro"]
-  };
+  const [selectedModel, setSelectedModel] = useState<string>("");
 
   // Toast notification helper
   const showToast = (msg: string) => {
@@ -100,6 +96,13 @@ export default function App() {
       setBanners(initialBanners);
     }
 
+    const savedLocalSettings = localStorage.getItem("thyago_tech_settings");
+    if (savedLocalSettings) {
+      try {
+        setStoreSettings(JSON.parse(savedLocalSettings));
+      } catch (e) {}
+    }
+
     // Subscribe to live Firestore updates
     const unsubscribeProducts = subscribeToProducts((liveProducts) => {
       if (liveProducts && liveProducts.length > 0) {
@@ -115,6 +118,13 @@ export default function App() {
       }
     });
 
+    const unsubscribeSettings = subscribeToSettings((liveSettings) => {
+      if (liveSettings) {
+        setStoreSettings(liveSettings);
+        localStorage.setItem("thyago_tech_settings", JSON.stringify(liveSettings));
+      }
+    });
+
     // Cart from local storage
     const savedCart = localStorage.getItem("thyago_tech_cart");
     if (savedCart) {
@@ -126,6 +136,7 @@ export default function App() {
     return () => {
       unsubscribeProducts();
       unsubscribeBanners();
+      unsubscribeSettings();
     };
   }, []);
 
@@ -140,7 +151,11 @@ export default function App() {
       const updatedIds = new Set(updatedProducts.map((p) => p.id));
       const deletedProducts = previousProducts.filter((p) => !updatedIds.has(p.id));
       for (const del of deletedProducts) {
-        await deleteProductFromFirestore(del.id);
+        try {
+          await deleteProductFromFirestore(del.id);
+        } catch (delErr) {
+          console.warn("Delete error in Firestore for ID:", del.id, delErr);
+        }
       }
 
       for (const p of updatedProducts) {
@@ -149,7 +164,11 @@ export default function App() {
       showToast("✓ Produtos salvos e sincronizados no Firebase!");
     } catch (err: any) {
       console.warn("Error syncing products to Firestore:", err);
-      showToast("⚠️ Salvo localmente. Verifique permissões do Firebase.");
+      if (err?.code === "permission-denied") {
+        showToast("⚠️ Faça login como Administrador para salvar no Firebase!");
+      } else {
+        showToast("⚠️ Salvo localmente. Verifique permissões do Firebase.");
+      }
     }
   };
 
@@ -163,6 +182,20 @@ export default function App() {
       showToast("✓ Banners sincronizados no Firebase Cloud!");
     } catch (err) {
       console.warn("Error syncing banners to Firestore:", err);
+    }
+  };
+
+  // Sync settings to Firestore & localStorage
+  const handleSaveSettings = async (updatedSettings: StoreSettings) => {
+    setStoreSettings(updatedSettings);
+    localStorage.setItem("thyago_tech_settings", JSON.stringify(updatedSettings));
+
+    try {
+      await saveSettingsToFirestore(updatedSettings);
+      showToast("✓ Configurações salvas e sincronizadas!");
+    } catch (err: any) {
+      console.warn("Error syncing settings to Firestore:", err);
+      showToast("✓ Configurações salvas localmente!");
     }
   };
 
@@ -308,7 +341,9 @@ export default function App() {
 
     // Filter matching
     let matchesFilter = true;
-    if (selectedFilter !== "Todos") {
+    if (selectedFilter === "Destaques") {
+      matchesFilter = !!p.isBestSeller;
+    } else if (selectedFilter !== "Todos") {
       const filterNorm = normalize(selectedFilter);
       if (filterNorm === "celular") {
         matchesFilter = pCatsNorm.some((c) => celularCatsNorm.includes(c));
@@ -319,7 +354,17 @@ export default function App() {
       }
     }
 
-    return matchesSearch && matchesGroup && matchesFilter;
+    // Phone Model filter matching (if Capas or Películas has active model selected)
+    let matchesModel = true;
+    if (selectedModel && isPhoneModelCategory(pCats)) {
+      const modelNorm = normalize(selectedModel);
+      const prodModels = (p.compatibleModels || []).map((m) => normalize(m));
+      const hasCompatibleModel = prodModels.some((m) => m.includes(modelNorm) || modelNorm.includes(m));
+      const inNameOrDesc = normalize(p.name).includes(modelNorm) || normalize(p.description).includes(modelNorm);
+      matchesModel = hasCompatibleModel || inNameOrDesc;
+    }
+
+    return matchesSearch && matchesGroup && matchesFilter && matchesModel;
   });
 
   const cartCount = cartItems.reduce((acc, curr) => acc + curr.quantity, 0);
@@ -345,6 +390,7 @@ export default function App() {
           isAdmin={isAdmin}
           onOpenLogin={() => setIsLoginModalOpen(true)}
           onLogout={handleLogout}
+          storeSettings={storeSettings}
         />
 
         {/* Views Router */}
@@ -528,37 +574,143 @@ export default function App() {
                     PRODUTOS EM <span className="text-emerald-400">DESTAQUE</span>
                   </h3>
                 </div>
-                <span className="text-[10px] font-bold text-emerald-400 hover:underline cursor-pointer flex items-center gap-0.5">
-                  Ver todos <ArrowRight className="w-3 h-3" />
-                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFilter("Destaques");
+                    setCurrentView("category");
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-[#06141a]/90 hover:bg-[#081c24] text-emerald-300 text-[10.5px] font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                >
+                  <span>Ver todos</span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
               </div>
 
-              {/* 2-Column Responsive Products Grid View exactly as image 1 */}
+              {/* 2-Column Responsive Products Grid View */}
               <div className="px-4 grid grid-cols-2 gap-3.5">
-                {filteredProducts.length === 0 ? (
-                  <div className="col-span-2 text-center py-10 flex flex-col items-center justify-center gap-2 text-gray-500">
-                    <Grid className="w-8 h-8 text-emerald-600 animate-pulse" />
-                    <span className="text-xs font-bold text-gray-400">Nenhum produto encontrado</span>
-                    <span className="text-[10px]">Tente redefinir a busca ou categoria</span>
-                  </div>
-                ) : (
-                  filteredProducts.map((p) => (
-                    <ProductCard
-                      key={p.id}
-                      product={p}
-                      onClick={() => handleNavigate("detail", p.id)}
-                      onAddToCart={(e) => {
-                        e.stopPropagation();
-                        // If color is active, default to first color, or add directly
-                        const defaultColor = p.colorStockControl && p.colors.length > 0 
-                          ? p.colors[0].color 
-                          : undefined;
-                        handleAddToCart(p, 1, defaultColor);
-                      }}
-                    />
-                  ))
-                )}
+                {(() => {
+                  const displayList = searchQuery 
+                    ? filteredProducts 
+                    : products.filter(p => p.isBestSeller).slice(0, 4);
+
+                  if (displayList.length === 0) {
+                    return (
+                      <div className="col-span-2 text-center py-10 flex flex-col items-center justify-center gap-2 text-gray-500">
+                        <Grid className="w-8 h-8 text-emerald-600 animate-pulse" />
+                        <span className="text-xs font-bold text-gray-400">Nenhum produto encontrado</span>
+                        <span className="text-[10px]">Tente redefinir a busca ou categoria</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    displayList.map((p) => (
+                      <ProductCard
+                        key={p.id}
+                        product={p}
+                        onClick={() => handleNavigate("detail", p.id)}
+                        onAddToCart={(e) => {
+                          e.stopPropagation();
+                          const defaultColor = p.colorStockControl && p.colors.length > 0 
+                            ? p.colors[0].color 
+                            : undefined;
+                          handleAddToCart(p, 1, defaultColor);
+                        }}
+                      />
+                    ))
+                  );
+                })()}
               </div>
+
+              {/* Promotional Banner (1200x200px) */}
+              <div className="px-4 my-1 sm:my-3">
+                <div className="relative w-full rounded-2xl overflow-hidden shadow-xl border border-emerald-500/30 bg-[#06141a]">
+                  <Banner 
+                    banners={
+                      storeSettings.promoBanners && storeSettings.promoBanners.length > 0 
+                        ? storeSettings.promoBanners 
+                        : [
+                            {
+                              id: "promo-default",
+                              src: storeSettings.promoBannerUrl || "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=1200&q=80",
+                              alt: "Banner Promocional",
+                              active: true
+                            }
+                          ]
+                    } 
+                    aspectRatio="aspect-[4/1] md:aspect-[6/1]"
+                    className="w-full"
+                    onBannerClick={(banner) => {
+                      if (banner.linkGroup) {
+                        handleBannerClick(banner);
+                      } else {
+                        const text = encodeURIComponent("Olá! Vi o banner no site e gostaria de fazer uma encomenda ou tirar dúvida.");
+                        window.open(`https://wa.me/${storeSettings.whatsappNumber}?text=${text}`, "_blank");
+                      }
+                    }} 
+                  />
+                </div>
+              </div>
+
+              {/* Capas e Cases Section */}
+              {(() => {
+                const capasList = searchQuery
+                  ? filteredProducts.filter(p => {
+                      const pCats = p.categories && p.categories.length > 0 ? p.categories : [p.category];
+                      return pCats.some(c => ["capas", "capa"].includes(c.toLowerCase()));
+                    })
+                  : products.filter(p => {
+                      const pCats = p.categories && p.categories.length > 0 ? p.categories : [p.category];
+                      return pCats.some(c => ["capas", "capa"].includes(c.toLowerCase()));
+                    }).slice(0, 4);
+
+                if (capasList.length === 0) return null;
+
+                return (
+                  <div className="mt-1 sm:mt-4 flex flex-col gap-3">
+                    <div className="px-4 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-3 bg-emerald-400 rounded-xs" />
+                        <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                          CAPAS E <span className="text-emerald-400">CASES</span>
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedGroup("Celular");
+                          setSelectedFilter("Capas");
+                          setCurrentView("category");
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        className="px-3 py-1.5 rounded-xl border border-emerald-500/40 bg-[#06141a]/90 hover:bg-[#081c24] text-emerald-300 text-[10.5px] font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                      >
+                        <span>Ver todos</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="px-4 grid grid-cols-2 gap-3.5">
+                      {capasList.map((p) => (
+                        <ProductCard
+                          key={p.id}
+                          product={p}
+                          onClick={() => handleNavigate("detail", p.id)}
+                          onAddToCart={(e) => {
+                            e.stopPropagation();
+                            const defaultColor = p.colorStockControl && p.colors.length > 0 
+                              ? p.colors[0].color 
+                              : undefined;
+                            handleAddToCart(p, 1, defaultColor);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Database reset helper to quickly reset catalog */}
               <div className="px-4 mt-4 flex justify-center">
@@ -728,8 +880,8 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Button to the right of Capas category */}
-                  {selectedFilter === "Capas" && (
+                  {/* Button to the right of Capas & Películas category */}
+                  {isPhoneModelCategory([selectedFilter]) && (
                     <button
                       onClick={() => {
                         setIsPhoneModalOpen(true);
@@ -743,7 +895,7 @@ export default function App() {
                 </div>
 
                 {/* Row 2: Selected models tags on the line below */}
-                {selectedFilter === "Capas" && (selectedBrand || selectedModel) && (
+                {isPhoneModelCategory([selectedFilter]) && (selectedBrand || selectedModel) && (
                   <div className="flex flex-wrap items-center gap-1.5">
                     {selectedBrand && (
                       <div className="h-6 inline-flex items-center justify-center gap-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold px-2.5 rounded-md whitespace-nowrap shadow-sm">
@@ -823,7 +975,15 @@ export default function App() {
                 allProducts={products}
                 onBack={() => handleNavigate("home")}
                 onNavigateToProduct={(id) => handleNavigate("detail", id)}
+                onNavigateToCategory={({ group, filter, model }) => {
+                  if (group) setSelectedGroup(group);
+                  if (filter) setSelectedFilter(filter);
+                  if (model) setSelectedModel(model);
+                  handleNavigate("home");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
                 onAddToCart={(prod, qty, col) => handleAddToCart(prod, qty, col)}
+                storeSettings={storeSettings}
               />
             </motion.div>
           )}
@@ -840,6 +1000,8 @@ export default function App() {
                   onSaveProducts={handleSaveProducts}
                   banners={banners}
                   onSaveBanners={handleSaveBanners}
+                  storeSettings={storeSettings}
+                  onSaveSettings={handleSaveSettings}
                   onBack={() => handleNavigate("home")}
                 />
               ) : (
@@ -881,6 +1043,7 @@ export default function App() {
           cartItems={cartItems}
           onUpdateQuantity={handleUpdateCartQuantity}
           onRemoveItem={handleRemoveCartItem}
+          storeSettings={storeSettings}
         />
 
         {/* Global Phone Brand & Model Selection Modal for Capas */}

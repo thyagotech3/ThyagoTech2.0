@@ -66,9 +66,6 @@ export default function ProductCard({ product, onClick, onAddToCart }: ProductCa
 
       {/* Content details */}
       <div className="flex flex-col flex-1 p-3.5">
-        <span className="text-[9px] uppercase tracking-wider text-emerald-400 font-bold mb-1 truncate">
-          {product.categories && product.categories.length > 0 ? product.categories.join(" • ") : product.category}
-        </span>
         <h3 className="text-sm font-bold text-white leading-tight line-clamp-1 group-hover:text-emerald-300 transition-colors">
           {product.name}
         </h3>
@@ -97,16 +94,6 @@ export default function ProductCard({ product, onClick, onAddToCart }: ProductCa
             <span>ADD</span>
           </button>
         </div>
-
-        {/* Stock status indicator (if active & showStock is enabled) */}
-        {product.showStock && (
-          <div className="mt-2.5 pt-1.5 border-t border-emerald-950/20 flex justify-between items-center text-[8px] text-gray-400 font-medium">
-            <span>Disponível em estoque</span>
-            <span className={`font-bold ${product.stock <= 3 ? "text-amber-400" : "text-emerald-400"}`}>
-              {product.stock} un
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { ShoppingCart, Menu, X, Settings, User as UserIcon, LogOut, ShieldCheck, LogIn } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "firebase/auth";
+import { StoreSettings } from "../types";
 
 interface HeaderProps {
   onNavigate: (view: "home" | "admin" | "detail", productId?: string) => void;
@@ -12,6 +13,7 @@ interface HeaderProps {
   isAdmin: boolean;
   onOpenLogin: () => void;
   onLogout: () => void;
+  storeSettings?: StoreSettings;
 }
 
 export default function Header({ 
@@ -22,33 +24,70 @@ export default function Header({
   user,
   isAdmin,
   onOpenLogin,
-  onLogout
+  onLogout,
+  storeSettings
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const storeName = storeSettings?.storeName || "Thyago Tech";
+  const nameParts = storeName.split(" ");
+  const firstNamePart = nameParts[0] || "THYAGO";
+  const restNamePart = nameParts.slice(1).join(" ") || "TECH";
 
   return (
     <header className="sticky top-0 z-50 bg-[#070b11]/95 backdrop-blur-md border-b border-emerald-950/40 px-4 py-3 flex items-center justify-between">
       {/* Brand Logo & Tagline */}
       <div 
-        className="flex items-center gap-2.5 cursor-pointer select-none"
+        className="flex items-center gap-2.5 cursor-pointer select-none max-w-[70%]"
         onClick={() => {
           onNavigate("home");
           setMenuOpen(false);
         }}
       >
-        {/* Futuristic circuit board vector style icon */}
-        <div className="relative flex items-center justify-center w-9 h-9 border border-emerald-400 rounded-lg bg-[#0a141d] shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-          <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="5" y="5" width="14" height="14" rx="2" />
-            <path d="M9 9h6v6H9z" />
-            <path d="M9 1h1v4H9zM14 1h1v4h-1zM9 19h1v4H9zM14 19h1v4h-1zM1 9h4v1H1zM1 14h4v1H1zM19 9h4v1h-4zM19 14h4v1h-4z" />
-          </svg>
-        </div>
-        <div>
-          <div className="flex items-center gap-1">
-            <span className="font-extrabold text-lg tracking-wider text-white">THYAGO</span>
-            <span className="font-extrabold text-lg tracking-wider text-emerald-400">TECH</span>
+        {/* Custom Logo Image or Circuit Board Vector Icon */}
+        {storeSettings?.logoUrl && !imgError ? (
+          <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-[#091522] border border-emerald-500/40 ring-1 ring-emerald-400/20 overflow-hidden shadow-[0_0_16px_rgba(16,185,129,0.25)] flex-shrink-0 group">
+            <img 
+              src={storeSettings.logoUrl} 
+              alt={storeName}
+              referrerPolicy="no-referrer"
+              onError={() => setImgError(true)}
+              style={{
+                transform: `scale(${((storeSettings.logoZoom ?? 100) / 100)})`,
+                transformOrigin: "center center"
+              }}
+              className={`w-full h-full transition-transform duration-300 ${
+                storeSettings.logoFit === "contain" ? "object-contain p-1" : "object-cover"
+              }`}
+            />
+            {/* Subtle inner highlight border overlay */}
+            <div className="absolute inset-0 rounded-xl pointer-events-none ring-1 ring-inset ring-white/10" />
           </div>
+        ) : (
+          <div className="relative flex items-center justify-center w-10 h-10 border border-emerald-400/80 rounded-xl bg-[#091522] shadow-[0_0_12px_rgba(16,185,129,0.25)] ring-1 ring-emerald-500/20 flex-shrink-0">
+            <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="5" y="5" width="14" height="14" rx="2" />
+              <path d="M9 9h6v6H9z" />
+              <path d="M9 1h1v4H9zM14 1h1v4h-1zM9 19h1v4H9zM14 19h1v4h-1zM1 9h4v1H1zM1 14h4v1H1zM19 9h4v1h-4zM19 14h4v1h-4z" />
+            </svg>
+          </div>
+        )}
+
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 truncate">
+            {nameParts.length > 1 ? (
+              <>
+                <span className="font-extrabold text-lg tracking-wider text-white uppercase truncate">{firstNamePart}</span>
+                <span className="font-extrabold text-lg tracking-wider text-emerald-400 uppercase truncate">{restNamePart}</span>
+              </>
+            ) : (
+              <span className="font-extrabold text-lg tracking-wider text-white uppercase truncate">{storeName}</span>
+            )}
+          </div>
+          {storeSettings?.storeTagline && (
+            <p className="text-[9px] text-gray-400 -mt-1 font-medium truncate">{storeSettings.storeTagline}</p>
+          )}
         </div>
       </div>
 

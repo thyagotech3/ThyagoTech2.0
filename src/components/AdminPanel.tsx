@@ -7,11 +7,14 @@ import {
   Upload, ArrowUp, ArrowDown, Layers, Eye, Sparkles,
   HelpCircle, RefreshCw, Smartphone, Monitor, Gamepad2,
   AlertTriangle, Video, Film, Play, ChevronLeft, ChevronRight,
-  Palette
+  Palette, Settings, ShoppingBag, SlidersHorizontal, Clock, Phone,
+  MapPin, CreditCard, Instagram, Store, RotateCcw, CheckCircle2, Link as LinkIcon,
+  ZoomIn, ZoomOut, Maximize2, Lock, Unlock, Search, Star
 } from "lucide-react";
-import { Product, ColorStock, Specification, HighlightPoint, BannerItem } from "../types";
+import { Product, ColorStock, Specification, HighlightPoint, BannerItem, StoreSettings, defaultStoreSettings } from "../types";
 import { initialBanners } from "../initialBanners";
 import { compressImage } from "../utils/imageCompressor";
+import { PHONE_BRANDS, PHONE_MODELS, PhoneBrand, isPhoneModelCategory } from "../phoneModels";
 
 export const PRESET_VARIATION_COLORS = [
   { name: "Sem cor (Padrão Verde)", hex: "", preview: "#00e181" },
@@ -34,11 +37,15 @@ export const PRESET_VARIATION_COLORS = [
   { name: "Marrom", hex: "#78350F", preview: "#78350F" }
 ];
 
+export type AdminPageView = "menu" | "products" | "banners" | "orders" | "settings";
+
 interface AdminPanelProps {
   products: Product[];
   onSaveProducts: (updatedProducts: Product[]) => void;
   banners?: BannerItem[];
   onSaveBanners?: (updatedBanners: BannerItem[]) => void;
+  storeSettings?: StoreSettings;
+  onSaveSettings?: (updatedSettings: StoreSettings) => void;
   onBack: () => void;
 }
 
@@ -47,10 +54,53 @@ export default function AdminPanel({
   onSaveProducts, 
   banners = initialBanners, 
   onSaveBanners, 
+  storeSettings,
+  onSaveSettings,
   onBack 
 }: AdminPanelProps) {
-  // Admin Main Tab: "products" | "banners"
-  const [adminTab, setAdminTab] = useState<"products" | "banners">("products");
+  // Admin Navigation View: "menu" | "products" | "banners" | "orders" | "settings"
+  const [adminView, setAdminView] = useState<AdminPageView>("menu");
+
+  // Settings State
+  const [storeName, setStoreName] = useState(storeSettings?.storeName || defaultStoreSettings.storeName);
+  const [storeTagline, setStoreTagline] = useState(storeSettings?.storeTagline || defaultStoreSettings.storeTagline || "");
+  const [logoUrl, setLogoUrl] = useState(storeSettings?.logoUrl || "");
+  const [logoZoom, setLogoZoom] = useState<number>(storeSettings?.logoZoom ?? 100);
+  const [logoFit, setLogoFit] = useState<"cover" | "contain">(storeSettings?.logoFit ?? "cover");
+  const [whatsappNumber, setWhatsappNumber] = useState(storeSettings?.whatsappNumber || defaultStoreSettings.whatsappNumber);
+  const [businessHours, setBusinessHours] = useState(storeSettings?.businessHours || defaultStoreSettings.businessHours || "");
+  const [instagramHandle, setInstagramHandle] = useState(storeSettings?.instagramHandle || defaultStoreSettings.instagramHandle || "");
+  const [pixKey, setPixKey] = useState(storeSettings?.pixKey || defaultStoreSettings.pixKey || "");
+  const [deliveryInfo, setDeliveryInfo] = useState(storeSettings?.deliveryInfo || defaultStoreSettings.deliveryInfo || "");
+  const [address, setAddress] = useState(storeSettings?.address || defaultStoreSettings.address || "");
+  const [logoLoading, setLogoLoading] = useState(false);
+  const [settingsSavedToast, setSettingsSavedToast] = useState(false);
+  const [isUrlInputOpen, setIsUrlInputOpen] = useState(false);
+  const [customLogoUrlInput, setCustomLogoUrlInput] = useState("");
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const [promoBannerUrl, setPromoBannerUrl] = useState(storeSettings?.promoBannerUrl || "");
+  const [promoBannerLoading, setPromoBannerLoading] = useState(false);
+  const [isPromoUrlInputOpen, setIsPromoUrlInputOpen] = useState(false);
+  const [customPromoUrlInput, setCustomPromoUrlInput] = useState("");
+  const promoBannerFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync settings when prop updates
+  React.useEffect(() => {
+    if (storeSettings) {
+      setStoreName(storeSettings.storeName || defaultStoreSettings.storeName);
+      setStoreTagline(storeSettings.storeTagline !== undefined ? storeSettings.storeTagline : (defaultStoreSettings.storeTagline || ""));
+      setLogoUrl(storeSettings.logoUrl || "");
+      setLogoZoom(typeof storeSettings.logoZoom === "number" ? storeSettings.logoZoom : (defaultStoreSettings.logoZoom ?? 100));
+      setLogoFit(storeSettings.logoFit === "contain" ? "contain" : "cover");
+      setWhatsappNumber(storeSettings.whatsappNumber || defaultStoreSettings.whatsappNumber);
+      setBusinessHours(storeSettings.businessHours !== undefined ? storeSettings.businessHours : (defaultStoreSettings.businessHours || ""));
+      setInstagramHandle(storeSettings.instagramHandle !== undefined ? storeSettings.instagramHandle : (defaultStoreSettings.instagramHandle || ""));
+      setPixKey(storeSettings.pixKey !== undefined ? storeSettings.pixKey : (defaultStoreSettings.pixKey || ""));
+      setDeliveryInfo(storeSettings.deliveryInfo !== undefined ? storeSettings.deliveryInfo : (defaultStoreSettings.deliveryInfo || ""));
+      setAddress(storeSettings.address !== undefined ? storeSettings.address : (defaultStoreSettings.address || ""));
+      setPromoBannerUrl(storeSettings.promoBannerUrl || "");
+    }
+  }, [storeSettings]);
 
   // Confirmation Modal State (replaces unreliable window.confirm)
   const [confirmModal, setConfirmModal] = useState<{
@@ -114,11 +164,22 @@ export default function AdminPanel({
   const [newHighlightTitle, setNewHighlightTitle] = useState("");
   const [newHighlightDesc, setNewHighlightDesc] = useState("");
 
+  // Compatible models state (unlocked for Capas & Películas, max 5 models)
+  const [compatibleModels, setCompatibleModels] = useState<string[]>([]);
+  const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+  const [modelModalBrand, setModelModalBrand] = useState<PhoneBrand>("Apple");
+  const [modelModalStep, setModelModalStep] = useState<1 | 2>(1);
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
+
+  // Helper boolean to check if current selected categories allow phone model selection
+  const isModelSelectionEnabled = isPhoneModelCategory(categories);
+
   // -------------------------------------------------------------
   // --- BANNERS MANAGEMENT STATE ---
   // -------------------------------------------------------------
   const [editingBanner, setEditingBanner] = useState<BannerItem | null>(null);
   const [isCreatingBanner, setIsCreatingBanner] = useState(false);
+  const [bannerSubView, setBannerSubView] = useState<"topo" | "banner2">("topo");
   const [bannerTitle, setBannerTitle] = useState("");
   const [bannerAlt, setBannerAlt] = useState("");
   const [bannerSrc, setBannerSrc] = useState("");
@@ -128,11 +189,20 @@ export default function AdminPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Current banners list safe reference
-  const currentBanners = banners && banners.length > 0 ? banners : initialBanners;
+  const currentBanners = bannerSubView === "topo" 
+    ? (banners && banners.length > 0 ? banners : initialBanners)
+    : (storeSettings?.promoBanners || []);
 
   const saveBannersList = (updated: BannerItem[]) => {
-    if (onSaveBanners) {
-      onSaveBanners(updated);
+    if (bannerSubView === "topo") {
+      if (onSaveBanners) onSaveBanners(updated);
+    } else {
+      if (onSaveSettings) {
+        onSaveSettings({ 
+          ...(storeSettings || defaultStoreSettings), 
+          promoBanners: updated 
+        });
+      }
     }
   };
 
@@ -149,11 +219,12 @@ export default function AdminPanel({
     setImages([...p.images]);
     setVideos([...(p.videos || [])]);
     setStock(p.stock);
-    setShowStock(p.showStock);
+    setShowStock(p.showStock !== undefined ? !!p.showStock : true);
     setColorStockControl(p.colorStockControl);
     setColors([...(p.colors || [])]);
     setSpecifications([...(p.specifications || [])]);
     setHighlightPoints([...(p.highlightPoints || [])]);
+    setCompatibleModels(p.compatibleModels ? [...p.compatibleModels] : []);
     setIsBestSeller(p.isBestSeller || false);
   };
 
@@ -180,6 +251,7 @@ export default function AdminPanel({
     setHighlightPoints([
       { icon: "Sparkles", title: "Alta qualidade", desc: "Acabamento premium gamer" }
     ]);
+    setCompatibleModels([]);
     setIsBestSeller(false);
   };
 
@@ -228,6 +300,7 @@ export default function AdminPanel({
       colors,
       specifications,
       highlightPoints,
+      compatibleModels: isModelSelectionEnabled ? compatibleModels : (editingProduct?.compatibleModels || []),
       isBestSeller
     };
 
@@ -590,66 +663,852 @@ export default function AdminPanel({
     });
   };
 
+  const getPageTitle = () => {
+    switch (adminView) {
+      case "products":
+        return "Editar Produtos";
+      case "banners":
+        return "Editar Banners";
+      case "orders":
+        return "Pedidos";
+      case "settings":
+        return "Configurações";
+      default:
+        return "Painel Administrativo";
+    }
+  };
+
+  const handleTopBack = () => {
+    if (adminView === "menu") {
+      onBack();
+    } else {
+      if (adminView === "products" && (editingProduct || isCreatingNew)) {
+        cancelForm();
+        return;
+      }
+      if (adminView === "banners" && (editingBanner || isCreatingBanner)) {
+        cancelBannerForm();
+        return;
+      }
+      setAdminView("menu");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#05090f] pb-16 text-gray-100">
       {/* Top Header bar */}
       <div className="px-4 py-3 bg-[#070c14] border-b border-emerald-950/20 flex items-center justify-between sticky top-[61px] z-20">
         <button 
-          onClick={onBack}
+          onClick={handleTopBack}
           className="flex items-center gap-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Voltar à loja</span>
+          <span>{adminView === "menu" ? "Voltar à vitrine" : "Voltar"}</span>
         </button>
 
         <span className="text-xs font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded">
-          Painel Administrativo
+          {getPageTitle()}
         </span>
       </div>
 
       <div className="max-w-md mx-auto px-4 pt-4 flex flex-col gap-4">
         
-        {/* Navigation Tabs between Products and Carousel Banners */}
-        {!editingProduct && !isCreatingNew && !editingBanner && !isCreatingBanner && (
-          <div className="grid grid-cols-2 gap-2 p-1 bg-[#09141f] border border-emerald-950/60 rounded-xl">
-            <button
-              id="admin-tab-products"
-              onClick={() => setAdminTab("products")}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                adminTab === "products"
-                  ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
-                  : "text-gray-400 hover:text-white hover:bg-emerald-950/30"
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              <span>Produtos ({products.length})</span>
-            </button>
-            <button
-              id="admin-tab-banners"
-              onClick={() => setAdminTab("banners")}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-                adminTab === "banners"
-                  ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
-                  : "text-gray-400 hover:text-white hover:bg-emerald-950/30"
-              }`}
-            >
-              <ImageIcon className="w-3.5 h-3.5" />
-              <span>Banners ({currentBanners.length})</span>
-            </button>
+        {/* ============================================================== */}
+        {/* ==================== MAIN MENU VIEW ========================== */}
+        {/* ============================================================== */}
+        {adminView === "menu" && (
+          <div className="flex flex-col gap-3">
+            <div className="pb-1">
+              <h2 className="text-lg font-black text-white">Menu do Administrador</h2>
+              <p className="text-[11px] text-gray-400">Selecione uma categoria para gerenciar</p>
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              {/* Option 1: Editar Produtos */}
+              <button
+                id="btn-menu-products"
+                onClick={() => setAdminView("products")}
+                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-emerald-500 group-hover:text-black transition-all">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors">
+                        Editar Produtos
+                      </h3>
+                      <span className="text-[9px] font-extrabold bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-md">
+                        {products.length} itens
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      Estoque, fotos, preços e variações
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 2: Editar Banners */}
+              <button
+                id="btn-menu-banners"
+                onClick={() => setAdminView("banners")}
+                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-cyan-500 group-hover:text-black transition-all">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">
+                        Editar Banners
+                      </h3>
+                      <span className="text-[9px] font-extrabold bg-cyan-950/80 text-cyan-400 border border-cyan-800/50 px-2 py-0.5 rounded-md">
+                        {currentBanners.length} banners
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      Carrossel promocional da tela inicial
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 3: Pedidos */}
+              <button
+                id="btn-menu-orders"
+                onClick={() => setAdminView("orders")}
+                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-amber-500 group-hover:text-black transition-all">
+                    <ShoppingBag className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                        Pedidos
+                      </h3>
+                      <span className="text-[9px] font-bold bg-amber-950/60 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded">
+                        Sem função por enquanto
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      Histórico e controle de vendas
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 4: Configurações */}
+              <button
+                id="btn-menu-settings"
+                onClick={() => setAdminView("settings")}
+                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-purple-500 group-hover:text-black transition-all">
+                    <Settings className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
+                        Configurações
+                      </h3>
+                      <span className="text-[9px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <CheckCircle2 className="w-2.5 h-2.5" />
+                        Ativo
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      Logo, dados da loja, WhatsApp e horários
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* ==================== ORDERS SECTION ========================== */}
+        {/* ============================================================== */}
+        {adminView === "orders" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-white">Pedidos</h2>
+                <p className="text-[10px] text-gray-400">Controle e acompanhamento de vendas</p>
+              </div>
+              <span className="text-[10px] font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-lg">
+                Sem função por enquanto
+              </span>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#08121a] border border-emerald-950/70 flex flex-col items-center justify-center text-center gap-3 shadow-lg">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                <ShoppingBag className="w-7 h-7" />
+              </div>
+              <h3 className="text-sm font-bold text-white">Central de Pedidos e Vendas</h3>
+              <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
+                Este módulo está em preparação. Em breve você poderá gerenciar todas as mensagens de vendas do WhatsApp, aprovar pagamentos PIX/Cartão e dar baixa automática no estoque por aqui.
+              </p>
+              <button
+                onClick={() => setAdminView("menu")}
+                className="mt-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs transition-all cursor-pointer shadow-md"
+              >
+                Voltar ao Menu Principal
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* =================== SETTINGS SECTION ========================= */}
+        {/* ============================================================== */}
+        {adminView === "settings" && (
+          <div className="flex flex-col gap-5 pb-8">
+            {/* Top Title & Save Button Bar */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-white flex items-center gap-2">
+                  <span>Configurações da Loja</span>
+                </h2>
+                <p className="text-[10px] text-gray-400">Personalize a identidade, logo, WhatsApp e informações da loja</p>
+              </div>
+              <button
+                id="btn-save-settings-top"
+                onClick={() => {
+                  const updated: StoreSettings = {
+                    storeName: storeName.trim() || defaultStoreSettings.storeName,
+                    storeTagline: storeTagline.trim(),
+                    logoUrl: logoUrl.trim(),
+                    logoZoom: logoZoom,
+                    logoFit: logoFit,
+                    whatsappNumber: whatsappNumber.trim() || defaultStoreSettings.whatsappNumber,
+                    businessHours: businessHours.trim(),
+                    instagramHandle: instagramHandle.trim(),
+                    pixKey: pixKey.trim(),
+                    deliveryInfo: deliveryInfo.trim(),
+                    address: address.trim()
+                  };
+                  if (onSaveSettings) onSaveSettings(updated);
+                  setSettingsSavedToast(true);
+                  setTimeout(() => setSettingsSavedToast(false), 3000);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-md cursor-pointer hover:scale-105"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Salvar</span>
+              </button>
+            </div>
+
+            {/* Success Toast */}
+            <AnimatePresence>
+              {settingsSavedToast && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 shadow-lg"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <span>Configurações salvas e sincronizadas com sucesso!</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* 1. SEÇÃO DE LOGO */}
+            <div className="p-4 rounded-2xl bg-[#08121a] border border-emerald-950/80 flex flex-col gap-4 shadow-md">
+              <div className="flex items-center justify-between border-b border-emerald-950/50 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-inner">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">Logo da Loja</h3>
+                    <p className="text-[10px] text-gray-400">Esta imagem preenche a moldura no topo e cabeçalho do site</p>
+                  </div>
+                </div>
+                {logoUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setLogoUrl("")}
+                    className="text-[10px] text-rose-400 hover:text-rose-300 font-bold px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 transition-colors cursor-pointer"
+                  >
+                    Remover Logo
+                  </button>
+                )}
+              </div>
+
+              {/* Upload Dropzone & Actions */}
+              <div className="flex flex-col gap-3">
+                <input 
+                  type="file" 
+                  ref={logoFileInputRef}
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+
+                    if (file.size > 10 * 1024 * 1024) {
+                      alert("A imagem selecionada é muito grande. Escolha uma foto de até 10MB.");
+                      return;
+                    }
+
+                    setLogoLoading(true);
+                    try {
+                      const compressed = await compressImage(file, {
+                        maxWidth: 600,
+                        maxHeight: 600,
+                        quality: 0.92,
+                        mimeType: "image/webp"
+                      });
+                      setLogoUrl(compressed);
+                    } catch (err) {
+                      console.error("Erro ao processar imagem da logo:", err);
+                      const reader = new FileReader();
+                      reader.onload = (loadEvt) => {
+                        if (loadEvt.target?.result) {
+                          setLogoUrl(loadEvt.target.result as string);
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    } finally {
+                      setLogoLoading(false);
+                      if (logoFileInputRef.current) {
+                        logoFileInputRef.current.value = "";
+                      }
+                    }
+                  }}
+                  className="hidden" 
+                />
+
+                <div 
+                  onClick={() => logoFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-5 flex flex-col items-center justify-center text-center gap-2 transition-all cursor-pointer ${
+                    logoUrl 
+                      ? "border-emerald-500/40 bg-emerald-950/15 hover:bg-emerald-950/25" 
+                      : "border-gray-800 hover:border-emerald-500/50 bg-[#060e15] hover:bg-[#091520]"
+                  }`}
+                >
+                  {logoLoading ? (
+                    <div className="flex flex-col items-center gap-2 py-3">
+                      <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" />
+                      <span className="text-xs text-gray-300 font-bold">Otimizando e preparando imagem...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shadow-inner">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-white">
+                          {logoUrl ? "Clique para carregar outra imagem da Logo" : "Clique ou arraste a imagem da sua Logo"}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          Formatos: PNG, JPG, WEBP ou SVG (A imagem preenche toda a moldura automaticamente)
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Option to insert direct image URL */}
+                <div className="flex items-center justify-between text-[11px] pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsUrlInputOpen(!isUrlInputOpen)}
+                    className="text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <LinkIcon className="w-3 h-3" />
+                    <span>{isUrlInputOpen ? "Ocultar campo de link URL" : "Ou inserir link direto da imagem (URL)"}</span>
+                  </button>
+                </div>
+
+                {isUrlInputOpen && (
+                  <div className="flex items-center gap-2 bg-[#060e15] p-2 rounded-xl border border-emerald-950">
+                    <input
+                      type="url"
+                      value={customLogoUrlInput}
+                      onChange={(e) => setCustomLogoUrlInput(e.target.value)}
+                      placeholder="https://exemplo.com/minha-logo.png"
+                      className="flex-1 bg-transparent px-2 text-xs text-white placeholder:text-gray-600 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customLogoUrlInput.trim()) {
+                          setLogoUrl(customLogoUrlInput.trim());
+                          setCustomLogoUrlInput("");
+                          setIsUrlInputOpen(false);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500 text-black font-bold text-xs hover:bg-emerald-400 transition-colors cursor-pointer"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                )}
+
+                {/* CONTROLES DE ZOOM E ENQUADRAMENTO */}
+                {logoUrl && (
+                  <div className="mt-1 bg-[#060f18] rounded-xl border border-emerald-900/40 p-3.5 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-white">
+                        <ZoomIn className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Ajuste de Zoom na Moldura</span>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-xs">
+                        {logoZoom}% {logoZoom === 100 ? "(Padrão)" : ""}
+                      </span>
+                    </div>
+
+                    {/* Zoom Range Slider */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setLogoZoom((prev) => Math.max(50, prev - 10))}
+                        title="Diminuir Zoom"
+                        className="w-8 h-8 rounded-lg bg-[#091825] hover:bg-[#0e2437] border border-emerald-950 flex items-center justify-center text-gray-300 hover:text-white cursor-pointer transition-colors"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </button>
+
+                      <div className="flex-1 flex flex-col gap-1">
+                        <input
+                          type="range"
+                          min={50}
+                          max={250}
+                          step={5}
+                          value={logoZoom}
+                          onChange={(e) => setLogoZoom(Number(e.target.value))}
+                          className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                        />
+                        <div className="flex justify-between text-[9px] text-gray-500 font-medium">
+                          <span>50% (Distante)</span>
+                          <span>100% (Original)</span>
+                          <span>250% (Aproximado)</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setLogoZoom((prev) => Math.min(250, prev + 10))}
+                        title="Aumentar Zoom"
+                        className="w-8 h-8 rounded-lg bg-[#091825] hover:bg-[#0e2437] border border-emerald-950 flex items-center justify-center text-gray-300 hover:text-white cursor-pointer transition-colors"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Zoom Presets Buttons */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] text-gray-400 font-bold mr-1">Atalhos rápidos:</span>
+                      {[75, 100, 125, 150, 175, 200].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setLogoZoom(preset)}
+                          className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                            logoZoom === preset
+                              ? "bg-emerald-500 text-black shadow-sm font-black"
+                              : "bg-[#0a1826] hover:bg-[#102436] text-gray-300 border border-emerald-950/70"
+                          }`}
+                        >
+                          {preset}%
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Preenchimento / Enquadramento Toggle */}
+                    <div className="pt-2 border-t border-emerald-950/60 flex flex-col gap-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        Modo de Enquadramento
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLogoFit("cover")}
+                          className={`p-2 rounded-xl text-xs font-bold flex flex-col items-center text-center gap-1 transition-all cursor-pointer border ${
+                            logoFit === "cover"
+                              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm"
+                              : "bg-[#0a1826] border-emerald-950 text-gray-400 hover:text-gray-300 hover:bg-[#0e2437]"
+                          }`}
+                        >
+                          <span className="text-[11px] font-extrabold">Preencher Toda a Moldura</span>
+                          <span className="text-[9px] text-gray-400 font-normal">Preenche 100% da moldura quadrada</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setLogoFit("contain")}
+                          className={`p-2 rounded-xl text-xs font-bold flex flex-col items-center text-center gap-1 transition-all cursor-pointer border ${
+                            logoFit === "contain"
+                              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-sm"
+                              : "bg-[#0a1826] border-emerald-950 text-gray-400 hover:text-gray-300 hover:bg-[#0e2437]"
+                          }`}
+                        >
+                          <span className="text-[11px] font-extrabold">Ajustar Imagem Inteira</span>
+                          <span className="text-[9px] text-gray-400 font-normal">Encaixa a imagem com margens</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live Preview Cards */}
+                <div className="mt-2 bg-[#060c13] rounded-xl border border-emerald-950/70 p-3.5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Eye className="w-3 h-3 text-emerald-400" />
+                      Pré-visualização da Moldura e do Topo
+                    </span>
+                    <span className="text-[9px] text-emerald-400/80 font-semibold">Atualização em tempo real</span>
+                  </div>
+
+                  {/* Dual Preview: Magnified Frame + Simulated Header */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                    {/* 1. Magnified Frame Showcase */}
+                    <div className="sm:col-span-5 bg-[#08131d] border border-emerald-900/50 rounded-xl p-3 flex items-center gap-3">
+                      <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-[#091522] border border-emerald-500/50 ring-2 ring-emerald-400/20 overflow-hidden shadow-[0_0_20px_rgba(16,185,129,0.3)] flex-shrink-0">
+                        {logoUrl ? (
+                          <img 
+                            src={logoUrl} 
+                            alt="Logo preview" 
+                            referrerPolicy="no-referrer"
+                            style={{
+                              transform: `scale(${logoZoom / 100})`,
+                              transformOrigin: "center center"
+                            }}
+                            className={`w-full h-full transition-transform duration-200 ${
+                              logoFit === "contain" ? "object-contain p-1.5" : "object-cover"
+                            }`}
+                          />
+                        ) : (
+                          <svg className="w-8 h-8 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="5" y="5" width="14" height="14" rx="2" />
+                            <path d="M9 9h6v6H9z" />
+                            <path d="M9 1h1v4H9zM14 1h1v4h-1zM9 19h1v4H9zM14 19h1v4h-1zM1 9h4v1H1zM1 14h4v1H1zM19 9h4v1h-4zM19 14h4v1h-4z" />
+                          </svg>
+                        )}
+                        <div className="absolute inset-0 rounded-2xl pointer-events-none ring-1 ring-inset ring-white/10" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[11px] font-extrabold text-white block">Moldura Estilizada</span>
+                        <span className="text-[9px] text-gray-400 block mt-0.5">Preenchimento total & acabamento luminoso</span>
+                        {logoUrl && (
+                          <span className="text-[9px] text-emerald-400 font-bold block mt-1">Zoom: {logoZoom}%</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2. Simulated Navbar Header */}
+                    <div className="sm:col-span-7 bg-[#070b11] border border-emerald-950/60 rounded-xl px-3.5 py-3 flex items-center justify-between shadow-inner">
+                      <div className="flex items-center gap-2.5 max-w-[85%]">
+                        {logoUrl ? (
+                          <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-[#091522] border border-emerald-500/40 ring-1 ring-emerald-400/20 overflow-hidden shadow-[0_0_15px_rgba(16,185,129,0.25)] flex-shrink-0">
+                            <img 
+                              src={logoUrl} 
+                              alt="Logo preview" 
+                              referrerPolicy="no-referrer"
+                              style={{
+                                transform: `scale(${logoZoom / 100})`,
+                                transformOrigin: "center center"
+                              }}
+                              className={`w-full h-full transition-transform duration-200 ${
+                                logoFit === "contain" ? "object-contain p-1" : "object-cover"
+                              }`}
+                            />
+                            <div className="absolute inset-0 rounded-xl pointer-events-none ring-1 ring-inset ring-white/10" />
+                          </div>
+                        ) : (
+                          <div className="relative flex items-center justify-center w-10 h-10 border border-emerald-400 rounded-xl bg-[#091522] shadow-[0_0_12px_rgba(16,185,129,0.2)] ring-1 ring-emerald-500/20 flex-shrink-0">
+                            <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <rect x="5" y="5" width="14" height="14" rx="2" />
+                              <path d="M9 9h6v6H9z" />
+                              <path d="M9 1h1v4H9zM14 1h1v4h-1zM9 19h1v4H9zM14 19h1v4h-1zM1 9h4v1H1zM1 14h4v1H1zM19 9h4v1h-4zM19 14h4v1h-4z" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1 truncate font-extrabold text-sm tracking-wider text-white uppercase">
+                            <span>{storeName || "Thyago Tech"}</span>
+                          </div>
+                          {storeTagline && (
+                            <p className="text-[8px] text-gray-400 font-medium truncate -mt-0.5">{storeTagline}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="w-7 h-7 rounded-lg bg-[#0a141d] border border-emerald-950 flex items-center justify-center text-gray-500 flex-shrink-0">
+                        <ShoppingBag className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. DADOS BÁSICOS DA LOJA */}
+            <div className="p-4 rounded-2xl bg-[#08121a] border border-emerald-950/80 flex flex-col gap-3.5 shadow-md">
+              <div className="flex items-center gap-2.5 border-b border-emerald-950/50 pb-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Store className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Identidade da Loja</h3>
+                  <p className="text-[10px] text-gray-400">Nome e slogan que aparecem em todo o catálogo</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Nome da Loja</label>
+                  <input
+                    type="text"
+                    value={storeName}
+                    onChange={(e) => setStoreName(e.target.value)}
+                    placeholder="Ex: Thyago Tech"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Slogan / Subtítulo</label>
+                  <input
+                    type="text"
+                    value={storeTagline}
+                    onChange={(e) => setStoreTagline(e.target.value)}
+                    placeholder="Ex: Tecnologia & Acessórios"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. ATENDIMENTO E WHATSAPP */}
+            <div className="p-4 rounded-2xl bg-[#08121a] border border-emerald-950/80 flex flex-col gap-3.5 shadow-md">
+              <div className="flex items-center gap-2.5 border-b border-emerald-950/50 pb-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Atendimento & WhatsApp</h3>
+                  <p className="text-[10px] text-gray-400">Número que recebe todos os pedidos gerados no carrinho</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">
+                    WhatsApp para Pedidos (com DDD)
+                  </label>
+                  <input
+                    type="text"
+                    value={whatsappNumber}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    placeholder="Ex: (81) 99707-3882 ou 5581997073882"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                  <p className="text-[9px] text-gray-500 mt-1">
+                    Os botões "Comprar pelo WhatsApp" e finalização de carrinho abrirão a conversa direta para este número.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Horário de Atendimento</label>
+                  <input
+                    type="text"
+                    value={businessHours}
+                    onChange={(e) => setBusinessHours(e.target.value)}
+                    placeholder="Ex: Seg à Sáb: 08h às 18h"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. PAGAMENTO & DADOS COMPLEMENTARES */}
+            <div className="p-4 rounded-2xl bg-[#08121a] border border-emerald-950/80 flex flex-col gap-3.5 shadow-md">
+              <div className="flex items-center gap-2.5 border-b border-emerald-950/50 pb-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Pagamento & Redes Sociais</h3>
+                  <p className="text-[10px] text-gray-400">Chave PIX e dados de contato para facilitar o checkout</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Chave PIX da Loja</label>
+                  <input
+                    type="text"
+                    value={pixKey}
+                    onChange={(e) => setPixKey(e.target.value)}
+                    placeholder="Ex: 81997073882 ou seu CNPJ/Email"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Instagram da Loja</label>
+                  <input
+                    type="text"
+                    value={instagramHandle}
+                    onChange={(e) => setInstagramHandle(e.target.value)}
+                    placeholder="Ex: @thyagotech"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Cidade / Localização</label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Ex: Recife - PE"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-gray-300 mb-1 block">Informações de Entrega</label>
+                  <input
+                    type="text"
+                    value={deliveryInfo}
+                    onChange={(e) => setDeliveryInfo(e.target.value)}
+                    placeholder="Ex: Entregas rápidas via Motoboy ou Correios"
+                    className="w-full bg-[#060e15] border border-emerald-950/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Action Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("Deseja restaurar as configurações padrão da loja?")) {
+                    setStoreName(defaultStoreSettings.storeName);
+                    setStoreTagline(defaultStoreSettings.storeTagline || "");
+                    setLogoUrl(defaultStoreSettings.logoUrl || "");
+                    setLogoZoom(defaultStoreSettings.logoZoom ?? 100);
+                    setLogoFit(defaultStoreSettings.logoFit ?? "cover");
+                    setWhatsappNumber(defaultStoreSettings.whatsappNumber);
+                    setBusinessHours(defaultStoreSettings.businessHours || "");
+                    setInstagramHandle(defaultStoreSettings.instagramHandle || "");
+                    setPixKey(defaultStoreSettings.pixKey || "");
+                    setDeliveryInfo(defaultStoreSettings.deliveryInfo || "");
+                    setAddress(defaultStoreSettings.address || "");
+                    
+                    if (onSaveSettings) {
+                      onSaveSettings(defaultStoreSettings);
+                    }
+                    setSettingsSavedToast(true);
+                    setTimeout(() => setSettingsSavedToast(false), 3000);
+                  }
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-400 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restaurar Padrões</span>
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setAdminView("menu")}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-[#091522] hover:bg-[#0e2135] text-gray-300 hover:text-white text-xs font-bold transition-colors cursor-pointer border border-emerald-950/70"
+                >
+                  Voltar ao Menu
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-save-settings-bottom"
+                  onClick={() => {
+                    const updated: StoreSettings = {
+                      storeName: storeName.trim() || defaultStoreSettings.storeName,
+                      storeTagline: storeTagline.trim(),
+                      logoUrl: logoUrl.trim(),
+                      logoZoom: logoZoom,
+                      logoFit: logoFit,
+                      whatsappNumber: whatsappNumber.trim() || defaultStoreSettings.whatsappNumber,
+                      businessHours: businessHours.trim(),
+                      instagramHandle: instagramHandle.trim(),
+                      pixKey: pixKey.trim(),
+                      deliveryInfo: deliveryInfo.trim(),
+                      address: address.trim(),
+                      promoBannerUrl: promoBannerUrl.trim()
+                    };
+                    if (onSaveSettings) onSaveSettings(updated);
+                    setSettingsSavedToast(true);
+                    setTimeout(() => setSettingsSavedToast(false), 3000);
+                  }}
+                  className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black flex items-center justify-center gap-2 transition-all shadow-lg cursor-pointer hover:scale-105"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Salvar Configurações</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
         {/* ============================================================== */}
         {/* ==================== BANNERS SECTION ========================= */}
         {/* ============================================================== */}
-        {adminTab === "banners" && (
+        {adminView === "banners" && (
           <>
+            {/* Banner Sub-view Switcher (Banner Topo vs Banner 2) */}
+            {!editingBanner && !isCreatingBanner && (
+              <div className="grid grid-cols-2 gap-2 p-1.5 bg-[#050e16] rounded-2xl border border-emerald-950/80 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setBannerSubView("topo")}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    bannerSubView === "topo"
+                      ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
+                      : "text-gray-400 hover:text-white hover:bg-emerald-950/40"
+                  }`}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span>Banner Topo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBannerSubView("banner2")}
+                  className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    bannerSubView === "banner2"
+                      ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
+                      : "text-gray-400 hover:text-white hover:bg-emerald-950/40"
+                  }`}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span>Banner 2</span>
+                </button>
+              </div>
+            )}
+
             {/* Banner Main View Header */}
             {!editingBanner && !isCreatingBanner && (
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-white">Carrossel de Banners</h2>
-                  <p className="text-[10px] text-gray-400">Personalize os banners promocionais da tela inicial</p>
+                  <h2 className="text-xl font-black text-white">
+                    {bannerSubView === "topo" ? "Carrossel de Banners (Topo)" : "Carrossel Promocional (Banner 2)"}
+                  </h2>
+                  <p className="text-[10px] text-gray-400">Personalize os banners da tela inicial</p>
                 </div>
                 <button
                   id="admin-create-banner-btn"
@@ -675,14 +1534,22 @@ export default function AdminPanel({
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div className="bg-[#050e16]/80 p-2.5 rounded-xl border border-emerald-950/60 flex flex-col gap-0.5">
                     <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Proporção Recomendada</span>
-                    <span className="text-sm font-black text-emerald-400">3 : 1 (Panorâmica)</span>
-                    <span className="text-[9px] text-gray-400">Largura 3× a altura da arte</span>
+                    <span className="text-sm font-black text-emerald-400">
+                      {bannerSubView === "topo" ? "3 : 1 (Panorâmica)" : "6 : 1 (Faixa Larga)"}
+                    </span>
+                    <span className="text-[9px] text-gray-400">
+                      {bannerSubView === "topo" ? "Largura 3× a altura da arte" : "Largura 6× a altura da arte"}
+                    </span>
                   </div>
 
                   <div className="bg-[#050e16]/80 p-2.5 rounded-xl border border-emerald-950/60 flex flex-col gap-0.5">
                     <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Resolução Ideal</span>
-                    <span className="text-sm font-black text-emerald-400">1200 × 400 px</span>
-                    <span className="text-[9px] text-gray-400">Mínimo: 900 × 300 px</span>
+                    <span className="text-sm font-black text-emerald-400">
+                      {bannerSubView === "topo" ? "1200 × 400 px" : "1200 × 200 px"}
+                    </span>
+                    <span className="text-[9px] text-gray-400">
+                      {bannerSubView === "topo" ? "Mínimo: 900 × 300 px" : "Mínimo: 900 × 150 px"}
+                    </span>
                   </div>
                 </div>
 
@@ -714,12 +1581,12 @@ export default function AdminPanel({
                           : "border-gray-800/40 opacity-60"
                       }`}
                     >
-                      {/* Banner Preview Thumbnail with strict 3:1 aspect ratio */}
-                      <div className="relative aspect-[3/1] w-full rounded-lg overflow-hidden bg-black border border-emerald-950/50">
+                      {/* Banner Preview Thumbnail with adaptive aspect ratio */}
+                      <div className={`relative ${bannerSubView === "topo" ? "aspect-[3/1]" : "aspect-[4/1] md:aspect-[6/1]"} w-full rounded-lg overflow-hidden bg-black border border-emerald-950/50`}>
                         <img 
                           src={banner.src} 
                           alt={banner.alt || banner.title} 
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover scale-[1.03]"
                         />
                         <div className="absolute top-1.5 left-1.5 bg-black/75 backdrop-blur-xs px-2 py-0.5 rounded text-[9px] font-bold text-emerald-400 border border-emerald-900/40">
                           Ordem #{index + 1}
@@ -834,16 +1701,16 @@ export default function AdminPanel({
                 {/* LIVE PREVIEW BOX */}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-gray-300 uppercase tracking-wider flex items-center justify-between">
-                    <span>Prévia em Tempo Real (Proporção 3:1)</span>
-                    <span className="text-emerald-400 text-[9px] font-normal">Exibição exata no carrossel</span>
+                    <span>Prévia em Tempo Real (Proporção {bannerSubView === "topo" ? "3:1" : "Adaptável Mobile"})</span>
+                    <span className="text-emerald-400 text-[9px] font-normal">Exibição no carrossel</span>
                   </span>
 
-                  <div className="relative aspect-[3/1] w-full rounded-xl overflow-hidden bg-[#04080e] border-2 border-emerald-500/40 shadow-inner flex items-center justify-center">
+                  <div className={`relative ${bannerSubView === "topo" ? "aspect-[3/1]" : "aspect-[4/1] md:aspect-[6/1]"} w-full rounded-xl overflow-hidden bg-[#04080e] border-2 border-emerald-500/40 shadow-inner flex items-center justify-center`}>
                     {bannerSrc ? (
                       <img 
                         src={bannerSrc} 
                         alt="Prévia do Banner" 
-                        className="w-full h-full object-cover select-none"
+                        className="w-full h-full object-cover select-none scale-[1.03]"
                       />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-gray-500 gap-1">
@@ -984,13 +1851,13 @@ export default function AdminPanel({
         {/* ============================================================== */}
         {/* ==================== PRODUCTS SECTION ======================== */}
         {/* ============================================================== */}
-        {adminTab === "products" && (
+        {adminView === "products" && (
           <>
             {/* Products Main View Header */}
             {!editingProduct && !isCreatingNew && (
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-white">Editar Vitrine</h2>
+                  <h2 className="text-xl font-black text-white">Editar Produtos</h2>
                   <p className="text-[10px] text-gray-400">Gerencie todos os seus produtos cadastrados</p>
                 </div>
                 <button
@@ -1038,7 +1905,25 @@ export default function AdminPanel({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updatedList = products.map((item) =>
+                              item.id === p.id ? { ...item, isBestSeller: !item.isBestSeller } : item
+                            );
+                            onSaveProducts(updatedList);
+                          }}
+                          className={`p-2.5 rounded-lg border transition-colors cursor-pointer flex items-center justify-center ${
+                            p.isBestSeller
+                              ? "bg-amber-950/40 border-amber-500/50 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.25)]"
+                              : "bg-emerald-950/30 border-emerald-900/30 text-gray-500 hover:text-amber-300"
+                          }`}
+                          title={p.isBestSeller ? "Remover dos destaques (Estrela marcada)" : "Marcar como produto em destaque (Estrela)"}
+                        >
+                          <Star className={`w-4 h-4 ${p.isBestSeller ? "fill-amber-400 text-amber-400" : ""}`} />
+                        </button>
                         <button
                           id={`edit-p-${p.id}`}
                           onClick={() => startEditing(p)}
@@ -1272,6 +2157,125 @@ export default function AdminPanel({
                   </div>
                 </div>
 
+                {/* COMPATIBLE PHONE MODELS (ONLY UNLOCKED FOR CAPAS OR PELÍCULAS) */}
+                <div 
+                  id="admin-compatible-models-section"
+                  className={`p-3.5 rounded-2xl border transition-all duration-300 ${
+                    isModelSelectionEnabled
+                      ? "bg-[#081520]/80 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.08)]"
+                      : "bg-[#060c13]/60 border-gray-800/80 opacity-65"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`p-2 rounded-xl border ${
+                        isModelSelectionEnabled 
+                          ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-400" 
+                          : "bg-gray-900 border-gray-800 text-gray-500"
+                      }`}>
+                        <Smartphone className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[11px] font-extrabold uppercase tracking-wider text-white">
+                            Modelos Compatíveis
+                          </label>
+                          {isModelSelectionEnabled ? (
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              {compatibleModels.length}/5 selecionados
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700 flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" /> Bloqueado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[9px] text-gray-400 mt-0.5">
+                          {isModelSelectionEnabled
+                            ? "Adicione até 5 modelos de celulares compatíveis com este produto."
+                            : "Liberado apenas quando a categoria Capas ou películas estiver selecionada."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Selected Models Tag List or Empty State */}
+                  {isModelSelectionEnabled ? (
+                    <div className="mt-3 flex flex-col gap-2.5">
+                      {compatibleModels.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {compatibleModels.map((model, idx) => (
+                            <div 
+                              key={idx}
+                              className="flex items-center gap-1.5 bg-emerald-950/70 border border-emerald-500/50 text-emerald-200 text-[10px] font-bold px-2.5 py-1 rounded-xl shadow-xs"
+                            >
+                              <span>📱 {model}</span>
+                              <button
+                                type="button"
+                                onClick={() => setCompatibleModels(compatibleModels.filter((_, i) => i !== idx))}
+                                className="w-4 h-4 rounded-full bg-emerald-900/60 hover:bg-rose-500 hover:text-white flex items-center justify-center text-[10px] font-black transition-colors cursor-pointer"
+                                title="Remover modelo"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-emerald-400/80 italic">
+                          Nenhum modelo selecionado ainda. Clique abaixo para escolher até 5 modelos.
+                        </p>
+                      )}
+
+                      {/* Action Button: Open Model Selector Modal */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModelModalStep(1);
+                          setModelSearchQuery("");
+                          setIsModelModalOpen(true);
+                        }}
+                        disabled={compatibleModels.length >= 5}
+                        className={`w-full py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          compatibleModels.length >= 5
+                            ? "bg-gray-900/80 border-gray-800 text-gray-500 cursor-not-allowed"
+                            : "bg-emerald-500 hover:bg-emerald-400 text-black border-emerald-400 shadow-[0_2px_12px_rgba(16,185,129,0.25)] font-black"
+                        }`}
+                      >
+                        {compatibleModels.length >= 5 ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Limite máximo de 5 modelos atingido</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>
+                              {compatibleModels.length === 0 
+                                ? "Selecionar Modelo (Abrir Lista de Modelos)" 
+                                : `Adicionar Mais Modelos (${compatibleModels.length}/5)`}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-2.5 p-2.5 rounded-xl bg-[#060b12] border border-gray-800/80 flex items-center justify-between text-gray-500">
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <Lock className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                        <span>Selecione <strong className="text-gray-400 font-semibold">Capas</strong> ou <strong className="text-gray-400 font-semibold">películas</strong> acima para liberar</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled
+                        className="py-1 px-2.5 bg-gray-900 border border-gray-800 text-gray-600 text-[10px] font-bold rounded-lg cursor-not-allowed"
+                      >
+                        Selecionar Modelo
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* PRICING & PROMOTION */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
@@ -1303,22 +2307,36 @@ export default function AdminPanel({
                 {/* TOGGLES */}
                 <div className="flex flex-col gap-2 p-3 bg-emerald-950/10 border border-emerald-900/30 rounded-xl">
                   <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-gray-200">Mostrar Estoque na Loja</span>
+                      <span className="text-[9px] text-gray-400">Quando ativado, os clientes veem o status "Em estoque" e quantidades</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowStock(!showStock)}
+                      className="text-emerald-400 cursor-pointer"
+                    >
+                      {showStock ? <ToggleRight className="w-6 h-6 text-emerald-400" /> : <ToggleLeft className="w-6 h-6 text-gray-500" />}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-emerald-950/40 pt-2">
                     <span className="text-xs font-bold text-gray-200">Destacar Tag de Desconto / Promoção</span>
                     <button
                       type="button"
                       onClick={() => setIsPromoActive(!isPromoActive)}
-                      className="text-emerald-400"
+                      className="text-emerald-400 cursor-pointer"
                     >
                       {isPromoActive ? <ToggleRight className="w-6 h-6 text-emerald-400" /> : <ToggleLeft className="w-6 h-6 text-gray-500" />}
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between border-t border-emerald-950/40 pt-2">
                     <span className="text-xs font-bold text-gray-200">Produto Mais Vendido (Best-Seller)</span>
                     <button
                       type="button"
                       onClick={() => setIsBestSeller(!isBestSeller)}
-                      className="text-emerald-400"
+                      className="text-emerald-400 cursor-pointer"
                     >
                       {isBestSeller ? <ToggleRight className="w-6 h-6 text-emerald-400" /> : <ToggleLeft className="w-6 h-6 text-gray-500" />}
                     </button>
@@ -2108,6 +3126,226 @@ export default function AdminPanel({
                   Fechar
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* ADMIN PHONE MODEL SELECTION MODAL */}
+        {isModelModalOpen && (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#07111b] border border-emerald-500/40 rounded-2xl w-full max-w-md p-5 flex flex-col gap-4 shadow-2xl text-white"
+            >
+              <div className="flex items-center justify-between border-b border-emerald-950 pb-3">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                      Passo {modelModalStep} de 2
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-400">
+                      ({compatibleModels.length}/5 selecionados)
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-white mt-1">
+                    {modelModalStep === 1 
+                      ? "Escolha a Marca do Smartphone" 
+                      : `Escolha os Modelos (${modelModalBrand})`}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsModelModalOpen(false)}
+                  className="w-7 h-7 rounded-full bg-gray-800/80 hover:bg-gray-700 text-gray-300 hover:text-white flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {modelModalStep === 1 ? (
+                <div className="flex flex-col gap-3">
+                  <p className="text-[11px] text-gray-400">
+                    Selecione a marca para visualizar os modelos disponíveis para vincular a esta capa ou película:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {PHONE_BRANDS.map((brand) => {
+                      const isBrandSelected = modelModalBrand === brand;
+                      const brandModels = PHONE_MODELS[brand] || [];
+                      const addedCountFromBrand = brandModels.filter((m) => compatibleModels.includes(m)).length;
+
+                      return (
+                        <button
+                          key={brand}
+                          type="button"
+                          onClick={() => {
+                            setModelModalBrand(brand);
+                            setModelModalStep(2);
+                            setModelSearchQuery("");
+                          }}
+                          className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer flex items-center justify-between group ${
+                            isBrandSelected
+                              ? "bg-emerald-500 text-black border-emerald-400 shadow-md shadow-emerald-500/20"
+                              : "bg-[#0b1620] text-gray-200 border-emerald-950 hover:border-emerald-500/50 hover:bg-[#0e1d2a]"
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-extrabold group-hover:text-emerald-300 transition-colors">
+                              {brand}
+                            </span>
+                            {addedCountFromBrand > 0 && (
+                              <span className="text-[9px] text-emerald-400 font-semibold mt-0.5">
+                                {addedCountFromBrand} já adicionado{addedCountFromBrand > 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-emerald-300" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {/* Brand tabs bar for quick switching */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none border-b border-emerald-950/60">
+                    {PHONE_BRANDS.map((brand) => {
+                      const brandCount = (PHONE_MODELS[brand] || []).filter((m) => compatibleModels.includes(m)).length;
+                      return (
+                        <button
+                          key={brand}
+                          type="button"
+                          onClick={() => {
+                            setModelModalBrand(brand);
+                            setModelSearchQuery("");
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+                            modelModalBrand === brand
+                              ? "bg-emerald-500 text-black font-black"
+                              : "bg-[#08121a] text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          <span>{brand}</span>
+                          {brandCount > 0 && (
+                            <span className={`text-[8px] px-1 py-0.2 rounded-full ${
+                              modelModalBrand === brand ? "bg-black/30 text-black font-black" : "bg-emerald-500/20 text-emerald-300"
+                            }`}>
+                              {brandCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Search model in brand */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder={`Buscar modelo ${modelModalBrand}...`}
+                      value={modelSearchQuery}
+                      onChange={(e) => setModelSearchQuery(e.target.value)}
+                      className="w-full bg-[#08121a] border border-emerald-950 text-white rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                    {modelSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setModelSearchQuery("")}
+                        className="absolute right-2.5 top-1.5 text-xs text-gray-400 hover:text-white"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Models Grid */}
+                  <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                    {((PHONE_MODELS[modelModalBrand] || []).filter((m) =>
+                      m.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                    )).map((model) => {
+                      const isAlreadySelected = compatibleModels.includes(model);
+                      const isMaxReached = compatibleModels.length >= 5 && !isAlreadySelected;
+
+                      return (
+                        <button
+                          key={model}
+                          type="button"
+                          disabled={isMaxReached}
+                          onClick={() => {
+                            if (isAlreadySelected) {
+                              setCompatibleModels(compatibleModels.filter((m) => m !== model));
+                            } else if (compatibleModels.length < 5) {
+                              setCompatibleModels([...compatibleModels, model]);
+                            }
+                          }}
+                          className={`p-2 rounded-xl border text-[11px] font-bold text-left transition-all cursor-pointer flex items-center justify-between ${
+                            isAlreadySelected
+                              ? "bg-emerald-500 text-black border-emerald-400 shadow-xs font-black"
+                              : isMaxReached
+                              ? "bg-[#08121a]/40 text-gray-600 border-gray-900 cursor-not-allowed"
+                              : "bg-[#0b1620] text-gray-200 border-emerald-950 hover:border-emerald-500/40 hover:bg-[#0e1d2a]"
+                          }`}
+                        >
+                          <span className="truncate">{model}</span>
+                          {isAlreadySelected ? (
+                            <span className="text-xs font-black">✓</span>
+                          ) : isMaxReached ? (
+                            <span className="text-[8px] opacity-40">Máx</span>
+                          ) : (
+                            <span className="text-[10px] opacity-40 group-hover:opacity-100">+</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Selected Models Summary in Modal */}
+                  {compatibleModels.length > 0 && (
+                    <div className="p-2 rounded-xl bg-[#060c14] border border-emerald-950/60 flex flex-col gap-1">
+                      <span className="text-[9px] font-extrabold text-emerald-400 uppercase">
+                        Selecionados ({compatibleModels.length}/5):
+                      </span>
+                      <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                        {compatibleModels.map((m, idx) => (
+                          <span 
+                            key={idx} 
+                            className="inline-flex items-center gap-1 text-[9px] font-bold bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-800"
+                          >
+                            {m}
+                            <button
+                              type="button"
+                              onClick={() => setCompatibleModels(compatibleModels.filter((_, i) => i !== idx))}
+                              className="hover:text-white ml-0.5 cursor-pointer font-black"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Navigation and Conclude Buttons */}
+                  <div className="flex items-center justify-between pt-2 border-t border-emerald-950/60">
+                    <button
+                      type="button"
+                      onClick={() => setModelModalStep(1)}
+                      className="px-3 py-2 rounded-xl bg-[#0b1620] border border-emerald-950 text-gray-300 text-xs font-bold hover:text-white cursor-pointer"
+                    >
+                      ← Escolher Marca
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsModelModalOpen(false)}
+                      className="px-5 py-2 rounded-xl bg-emerald-500 text-black text-xs font-black hover:bg-emerald-400 transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
+                    >
+                      Concluir ({compatibleModels.length}/5) ✓
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}

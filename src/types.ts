@@ -33,6 +33,8 @@ export interface Product {
   specifications: Specification[];
   highlightPoints: HighlightPoint[];
   isBestSeller: boolean;
+  compatibleModels?: string[]; // Up to 5 compatible phone models (for Capas and Películas)
+  tags?: string[];
 }
 
 export interface CartItem {
@@ -50,3 +52,35 @@ export interface BannerItem {
   linkFilter?: string;
   active: boolean;
 }
+
+export interface StoreSettings {
+  storeName: string;
+  storeTagline?: string;
+  logoUrl?: string;
+  logoZoom?: number; // Zoom level in percentage (e.g. 50% to 300%)
+  logoFit?: "cover" | "contain";
+  whatsappNumber: string;
+  businessHours?: string;
+  instagramHandle?: string;
+  pixKey?: string;
+  deliveryInfo?: string;
+  address?: string;
+  promoBannerUrl?: string; // Legacy string banner
+  promoBanners?: BannerItem[]; // Array for Banner 2 carousel
+}
+
+export const defaultStoreSettings: StoreSettings = {
+  storeName: "Thyago Tech",
+  storeTagline: "Tecnologia & Acessórios",
+  logoUrl: "",
+  logoZoom: 100,
+  logoFit: "cover",
+  whatsappNumber: "5581997073882",
+  businessHours: "Seg à Sáb: 08h às 18h",
+  instagramHandle: "thyagotech",
+  pixKey: "81997073882",
+  deliveryInfo: "Entrega rápida para toda a região via motoboy ou Correios",
+  address: "Recife, PE",
+  promoBannerUrl: "",
+  promoBanners: []
+};

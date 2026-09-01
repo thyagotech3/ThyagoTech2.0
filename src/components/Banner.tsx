@@ -7,9 +7,11 @@ import { initialBanners } from "../initialBanners";
 interface BannerProps {
   banners?: BannerItem[];
   onBannerClick?: (banner: BannerItem) => void;
+  aspectRatio?: string;
+  className?: string;
 }
 
-export default function Banner({ banners, onBannerClick }: BannerProps) {
+export default function Banner({ banners, onBannerClick, aspectRatio = "aspect-[3/1]", className = "w-full pt-1.5 pb-0" }: BannerProps) {
   const activeBanners = (banners && banners.length > 0 ? banners : initialBanners).filter(
     (b) => b.active !== false
   );
@@ -81,13 +83,13 @@ export default function Banner({ banners, onBannerClick }: BannerProps) {
   const currentBanner = displayBanners[currentIndex] || displayBanners[0];
 
   return (
-    <div className="w-full pt-1.5 pb-0">
+    <div className={className}>
       {/* 
         Container configured with no border, no padding, and no border-radius
         to extend fully edge-to-edge.
       */}
       <div 
-        className="relative overflow-hidden bg-[#04080e] aspect-[3/1] w-full group cursor-pointer"
+        className={`relative overflow-hidden bg-[#04080e] ${aspectRatio} w-full group cursor-pointer`}
         onMouseEnter={stopTimer}
         onMouseLeave={startTimer}
         onClick={() => onBannerClick && onBannerClick(currentBanner)}
@@ -105,16 +107,15 @@ export default function Banner({ banners, onBannerClick }: BannerProps) {
           >
             {/* Blurred ambient background behind the image for high-end look */}
             <div 
-              className="absolute inset-0 w-full h-full bg-cover bg-center blur-md opacity-25 scale-105 pointer-events-none"
+              className="absolute inset-0 w-full h-full bg-cover bg-center blur-md opacity-25 scale-110 pointer-events-none"
               style={{ backgroundImage: `url(${currentBanner.src})` }}
             />
-
             {/* Main fully visible banner image (object-cover fills the exact 3:1 aspect ratio perfectly) */}
             <img
               src={currentBanner.src}
               alt={currentBanner.alt || currentBanner.title || "Banner Thyago Tech"}
               referrerPolicy="no-referrer"
-              className="w-full h-full object-cover relative z-10 select-none"
+              className="w-full h-full object-cover relative z-10 select-none scale-[1.03]"
             />
           </motion.div>
         </AnimatePresence>

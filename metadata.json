@@ -1,0 +1,6 @@
+{
+  "name": "Thyago Tech",
+  "description": "Vitrine de produtos gamer e periféricos de alta performance otimizada para mobile com integração direta para pedidos no WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

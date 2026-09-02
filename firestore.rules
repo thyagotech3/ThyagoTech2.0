@@ -34,6 +34,23 @@ service cloud.firestore {
       allow write: if isAdmin() && isValidId(bannerId);
     }
 
+    // Promo Banners collection: Anyone can view; only Admin (Thyago) can manage
+    match /promo_banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidId(bannerId);
+    }
+
+    // Store Settings: Anyone can read; only Admin can write
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidId(settingId);
+    }
+
+    // Sales collection: Only Admin (Thyago) can read & write
+    match /sales/{saleId} {
+      allow read, write: if isAdmin() && isValidId(saleId);
+    }
+
     // Test connection doc
     match /test/connection {
       allow read: if true;

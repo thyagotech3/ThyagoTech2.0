@@ -3,7 +3,7 @@ import { Search, ShoppingBag, Grid, RefreshCw, Layers, ArrowRight, ArrowLeft, Sh
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "firebase/auth";
 
-import { Product, CartItem, BannerItem, StoreSettings, defaultStoreSettings } from "./types";
+import { Product, CartItem, BannerItem, StoreSettings, defaultStoreSettings, Sale } from "./types";
 import { initialProducts } from "./initialProducts";
 import { initialBanners } from "./initialBanners";
 import { PHONE_BRANDS, PHONE_MODELS, isPhoneModelCategory } from "./phoneModels";
@@ -13,12 +13,20 @@ import {
   isUserAdmin, 
   logoutUser, 
   subscribeToProducts, 
-  subscribeToBanners, 
+  subscribeToBanners,
+  subscribeToPromoBanners,
+  deletePromoBannerFromFirestore,
+  savePromoBannersToFirestore,
+  deleteBannerFromFirestore,
   subscribeToSettings,
   saveProductToFirestore, 
   deleteProductFromFirestore,
   saveBannersToFirestore,
   saveSettingsToFirestore,
+  subscribeToSales,
+  saveSaleToFirestore,
+  updateSaleStatusInFirestore,
+  deleteSaleFromFirestore,
   ADMIN_EMAIL
 } from "./firebase";
 
@@ -41,10 +49,12 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [banners, setBanners] = useState<BannerItem[]>([]);
+  const [promoBanners, setPromoBanners] = useState<BannerItem[]>([]);
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(defaultStoreSettings);
+  const [sales, setSales] = useState<Sale[]>([]);
 
   // --- UI Navigation & Filter States ---
-  const [currentView, setCurrentView] = useState<"home" | "detail" | "admin" | "category">("home");
+  const [currentView, setCurrentView] = useState<"home" | "detail" | "admin" | "category" | "about">("home");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -96,6 +106,14 @@ export default function App() {
       setBanners(initialBanners);
     }
 
+    
+    const savedPromoBanners = localStorage.getItem("thyago_tech_promo_banners");
+    if (savedPromoBanners) {
+      try {
+        setPromoBanners(JSON.parse(savedPromoBanners));
+      } catch (e) {}
+    }
+
     const savedLocalSettings = localStorage.getItem("thyago_tech_settings");
     if (savedLocalSettings) {
       try {
@@ -118,10 +136,34 @@ export default function App() {
       }
     });
 
+    
+    const unsubscribePromoBanners = subscribeToPromoBanners((livePromoBanners) => {
+      if (livePromoBanners && livePromoBanners.length > 0) {
+        setPromoBanners(livePromoBanners);
+        localStorage.setItem("thyago_tech_promo_banners", JSON.stringify(livePromoBanners));
+      } else {
+        setPromoBanners([]);
+      }
+    });
+
     const unsubscribeSettings = subscribeToSettings((liveSettings) => {
       if (liveSettings) {
         setStoreSettings(liveSettings);
         localStorage.setItem("thyago_tech_settings", JSON.stringify(liveSettings));
+      }
+    });
+
+    const savedSales = localStorage.getItem("thyago_tech_sales");
+    if (savedSales) {
+      try {
+        setSales(JSON.parse(savedSales));
+      } catch (e) {}
+    }
+
+    const unsubscribeSales = subscribeToSales((liveSales) => {
+      if (liveSales) {
+        setSales(liveSales);
+        localStorage.setItem("thyago_tech_sales", JSON.stringify(liveSales));
       }
     });
 
@@ -136,9 +178,44 @@ export default function App() {
     return () => {
       unsubscribeProducts();
       unsubscribeBanners();
+      unsubscribePromoBanners();
       unsubscribeSettings();
+      unsubscribeSales();
     };
   }, []);
+
+  // Sales Handlers
+  const handleSaveSale = async (newSale: Sale) => {
+    setSales((prev) => [newSale, ...prev.filter((s) => s.id !== newSale.id)]);
+    try {
+      await saveSaleToFirestore(newSale);
+    } catch (err) {
+      console.error("Error saving sale to Firestore:", err);
+    }
+  };
+
+  const handleUpdateSaleStatus = async (
+    saleId: string,
+    updates: { paymentStatus?: "pago" | "na_entrega" | "a_prazo"; status?: "concluida" | "cancelada" }
+  ) => {
+    setSales((prev) =>
+      prev.map((s) => (s.id === saleId ? { ...s, ...updates } : s))
+    );
+    try {
+      await updateSaleStatusInFirestore(saleId, updates);
+    } catch (err) {
+      console.error("Error updating sale status in Firestore:", err);
+    }
+  };
+
+  const handleDeleteSale = async (saleId: string) => {
+    setSales((prev) => prev.filter((s) => s.id !== saleId));
+    try {
+      await deleteSaleFromFirestore(saleId);
+    } catch (err) {
+      console.error("Error deleting sale in Firestore:", err);
+    }
+  };
 
   // Sync products to Firestore & localStorage
   const handleSaveProducts = async (updatedProducts: Product[]) => {
@@ -173,15 +250,42 @@ export default function App() {
   };
 
   // Sync banners to Firestore & localStorage
+  
   const handleSaveBanners = async (updatedBanners: BannerItem[]) => {
+    const previousBanners = banners;
     setBanners(updatedBanners);
     localStorage.setItem("thyago_tech_banners", JSON.stringify(updatedBanners));
 
     try {
+      const updatedIds = new Set(updatedBanners.map(b => b.id));
+      const deletedBanners = previousBanners.filter(b => !updatedIds.has(b.id));
+      for (const del of deletedBanners) {
+        try { await deleteBannerFromFirestore(del.id); } catch (e) {}
+      }
+
       await saveBannersToFirestore(updatedBanners);
       showToast("✓ Banners sincronizados no Firebase Cloud!");
     } catch (err) {
       console.warn("Error syncing banners to Firestore:", err);
+    }
+  };
+
+  const handleSavePromoBanners = async (updatedBanners: BannerItem[]) => {
+    const previousBanners = promoBanners;
+    setPromoBanners(updatedBanners);
+    localStorage.setItem("thyago_tech_promo_banners", JSON.stringify(updatedBanners));
+
+    try {
+      const updatedIds = new Set(updatedBanners.map(b => b.id));
+      const deletedBanners = previousBanners.filter(b => !updatedIds.has(b.id));
+      for (const del of deletedBanners) {
+        try { await deletePromoBannerFromFirestore(del.id); } catch (e) {}
+      }
+
+      await savePromoBannersToFirestore(updatedBanners);
+      showToast("✓ Banner 2 sincronizado no Firebase Cloud!");
+    } catch (err) {
+      console.warn("Error syncing promo banners to Firestore:", err);
     }
   };
 
@@ -375,10 +479,9 @@ export default function App() {
     <div className="min-h-screen bg-[#03060a] text-gray-100 flex justify-center">
       
       {/* 
-        Strict mobile viewport mockup frame when viewed on larger desktop monitors to simulate native phone app experience.
-        This provides perfect layout fidelity and looks outstanding in the AI Studio live preview iframe.
+        Responsive layout: Compact mobile-first design on phones, expanding fluidly into a spacious, elegant layout on tablets & desktops.
       */}
-      <div className="w-full max-w-md bg-[#05090f] min-h-screen shadow-2xl relative flex flex-col border-x border-emerald-950/25">
+      <div className="w-full max-w-md md:max-w-4xl lg:max-w-6xl xl:max-w-7xl bg-[#05090f] min-h-screen shadow-2xl relative flex flex-col md:border-x border-emerald-950/25">
         
         {/* Header Navigation */}
         <Header 
@@ -405,11 +508,168 @@ export default function App() {
               {/* Marketing setup billboard banner */}
               <Banner banners={banners} onBannerClick={handleBannerClick} />
 
-              {/* Specialized Interactive Category Dropdowns Track */}
+              {/* Specialized Interactive Category Dropdowns & Desktop Search Row */}
               <div className="px-4 -mt-2 relative z-30">
-                <div className="flex items-center gap-1.5 justify-between">
-                  
-                  {/* TODOS Button */}
+                {/* Mobile Layout */}
+                <div className="flex flex-col gap-2 md:hidden">
+                  <div className="flex items-center gap-1.5 justify-between">
+                    {/* TODOS Button */}
+                    <button
+                      onClick={() => {
+                        setSelectedGroup("Todos");
+                        setSelectedFilter("Todos");
+                        setCurrentView("category");
+                        setActiveDropdown(null);
+                      }}
+                      className={`flex-1 text-center py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        selectedGroup === "Todos"
+                          ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                          : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                      }`}
+                    >
+                      Todos
+                    </button>
+
+                    {/* CELULAR Dropdown Trigger */}
+                    <div className="flex-1 relative">
+                      <button
+                        onClick={() => setActiveDropdown(activeDropdown === "celular" ? null : "celular")}
+                        className={`w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          selectedGroup === "Celular"
+                            ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                            : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                        }`}
+                      >
+                        <span>Celular</span>
+                        <span className="text-[8px] opacity-80">▼</span>
+                      </button>
+                      
+                      {activeDropdown === "celular" && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
+                          <div className="absolute left-0 mt-1 min-w-full w-max max-w-[145px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left">
+                            {["Todos", "Celular", "Capas", "películas", "Fones", "Carregadores", "Cabos"].map((sub) => (
+                              <button
+                                key={sub}
+                                onClick={() => {
+                                  setSelectedGroup("Celular");
+                                  setSelectedFilter(sub);
+                                  setCurrentView("category");
+                                  setActiveDropdown(null);
+                                  if (sub === "Capas") {
+                                    setIsPhoneModalOpen(true);
+                                    setModalStep(1);
+                                  }
+                                }}
+                                className="w-full text-left px-2 py-1.5 text-[11px] text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
+                              >
+                                {sub}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* PC Dropdown Trigger */}
+                    <div className="flex-1 relative">
+                      <button
+                        onClick={() => setActiveDropdown(activeDropdown === "pc" ? null : "pc")}
+                        className={`w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          selectedGroup === "Pc"
+                            ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                            : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                        }`}
+                      >
+                        <span>PC</span>
+                        <span className="text-[8px] opacity-80">▼</span>
+                      </button>
+
+                      {activeDropdown === "pc" && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
+                          <div className="absolute left-0 mt-1 min-w-full w-max max-w-[145px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left">
+                            {["Todos", "Pc", "Mouse", "Teclado", "Fone", "Headset"].map((sub) => (
+                              <button
+                                key={sub}
+                                onClick={() => {
+                                  setSelectedGroup("Pc");
+                                  setSelectedFilter(sub);
+                                  setCurrentView("category");
+                                  setActiveDropdown(null);
+                                }}
+                                className="w-full text-left px-2 py-1.5 text-[11px] text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
+                              >
+                                {sub}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* MAIS Dropdown Trigger */}
+                    <div className="flex-1 relative">
+                      <button
+                        onClick={() => setActiveDropdown(activeDropdown === "mais" ? null : "mais")}
+                        className={`w-full flex items-center justify-center gap-1 py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          selectedGroup === "Videogame"
+                            ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                            : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                        }`}
+                      >
+                        <span>Mais</span>
+                        <span className="text-[8px] opacity-80">▼</span>
+                      </button>
+
+                      {activeDropdown === "mais" && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
+                          <div className="absolute right-0 mt-1 min-w-full w-max max-w-[145px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left">
+                            {["Videogames", "Camisetas (Novo)", "Tênis (Novo)"].map((sub) => (
+                              <button
+                                key={sub}
+                                onClick={() => {
+                                  setSelectedGroup("Videogame");
+                                  setSelectedFilter(sub);
+                                  setCurrentView("category");
+                                  setActiveDropdown(null);
+                                }}
+                                className="w-full text-left px-2 py-1.5 text-[11px] text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
+                              >
+                                {sub}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Mobile Search Field */}
+                  <div className="w-full relative">
+                    <Search className="absolute left-3.5 top-2.5 w-4.5 h-4.5 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Buscar mouse, teclado, headset..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-[#08121a] border border-emerald-950/40 focus:border-emerald-500 text-xs font-semibold rounded-2xl py-2.5 pl-10 pr-4 text-white focus:outline-none transition-all placeholder-gray-500"
+                    />
+                    {searchQuery && (
+                      <button 
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3.5 top-2 p-1 text-gray-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        limpar
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Desktop Unified Single Rectangle with Vertical Dividers */}
+                <div className="hidden md:flex items-center bg-emerald-500 rounded-xl border border-emerald-400 shadow-md overflow-visible text-black">
+                  {/* TODOS */}
                   <button
                     onClick={() => {
                       setSelectedGroup("Todos");
@@ -417,33 +677,31 @@ export default function App() {
                       setCurrentView("category");
                       setActiveDropdown(null);
                     }}
-                    className={`flex-1 text-center py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      selectedGroup === "Todos"
-                        ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                        : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                    className={`flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider text-center transition-colors cursor-pointer hover:bg-emerald-400 rounded-l-xl ${
+                      selectedGroup === "Todos" ? "bg-emerald-400 shadow-inner" : ""
                     }`}
                   >
                     Todos
                   </button>
 
-                  {/* CELULAR Dropdown Trigger */}
+                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+
+                  {/* CELULAR */}
                   <div className="flex-1 relative">
                     <button
                       onClick={() => setActiveDropdown(activeDropdown === "celular" ? null : "celular")}
-                      className={`w-full flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        selectedGroup === "Celular"
-                          ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                          : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                      className={`w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:bg-emerald-400 ${
+                        selectedGroup === "Celular" ? "bg-emerald-400 shadow-inner" : ""
                       }`}
                     >
                       <span>Celular</span>
-                      <span className="text-[8px] opacity-80">▼</span>
+                      <span className="text-[9px]">▼</span>
                     </button>
-                    
+
                     {activeDropdown === "celular" && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
-                        <div className="absolute left-0 mt-1 w-max bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left">
+                        <div className="absolute left-0 mt-2 min-w-[160px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white">
                           {["Todos", "Celular", "Capas", "películas", "Fones", "Carregadores", "Cabos"].map((sub) => (
                             <button
                               key={sub}
@@ -457,7 +715,7 @@ export default function App() {
                                   setModalStep(1);
                                 }
                               }}
-                              className="w-full text-left px-3.5 py-1.5 text-[11px] text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors whitespace-nowrap"
+                              className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
                             >
                               {sub}
                             </button>
@@ -467,24 +725,24 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* PC Dropdown Trigger */}
+                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+
+                  {/* PC */}
                   <div className="flex-1 relative">
                     <button
                       onClick={() => setActiveDropdown(activeDropdown === "pc" ? null : "pc")}
-                      className={`w-full flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        selectedGroup === "Pc"
-                          ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                          : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                      className={`w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:bg-emerald-400 ${
+                        selectedGroup === "Pc" ? "bg-emerald-400 shadow-inner" : ""
                       }`}
                     >
                       <span>PC</span>
-                      <span className="text-[8px] opacity-80">▼</span>
+                      <span className="text-[9px]">▼</span>
                     </button>
 
                     {activeDropdown === "pc" && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
-                        <div className="absolute left-1/2 -translate-x-1/2 mt-1 w-max bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left">
+                        <div className="absolute left-0 mt-2 min-w-[160px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white">
                           {["Todos", "Pc", "Mouse", "Teclado", "Fone", "Headset"].map((sub) => (
                             <button
                               key={sub}
@@ -494,7 +752,7 @@ export default function App() {
                                 setCurrentView("category");
                                 setActiveDropdown(null);
                               }}
-                              className="w-full text-left px-3.5 py-1.5 text-[11px] text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors whitespace-nowrap"
+                              className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
                             >
                               {sub}
                             </button>
@@ -504,24 +762,24 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* MAIS Dropdown Trigger */}
+                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+
+                  {/* MAIS */}
                   <div className="flex-1 relative">
                     <button
                       onClick={() => setActiveDropdown(activeDropdown === "mais" ? null : "mais")}
-                      className={`w-full flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                        selectedGroup === "Videogame"
-                          ? "bg-emerald-500 text-[#070b11] border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                          : "bg-[#0d1c26]/60 text-gray-300 border-emerald-950 hover:border-emerald-500/40"
+                      className={`w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:bg-emerald-400 ${
+                        selectedGroup === "Videogame" ? "bg-emerald-400 shadow-inner" : ""
                       }`}
                     >
                       <span>Mais</span>
-                      <span className="text-[8px] opacity-80">▼</span>
+                      <span className="text-[9px]">▼</span>
                     </button>
 
                     {activeDropdown === "mais" && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
-                        <div className="absolute right-0 mt-1 w-max bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left">
+                        <div className="absolute right-0 mt-2 min-w-[180px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white">
                           {["Videogames", "Camisetas (Novo)", "Tênis (Novo)"].map((sub) => (
                             <button
                               key={sub}
@@ -531,7 +789,7 @@ export default function App() {
                                 setCurrentView("category");
                                 setActiveDropdown(null);
                               }}
-                              className="w-full text-left px-3.5 py-1.5 text-[11px] text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors whitespace-nowrap"
+                              className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
                             >
                               {sub}
                             </button>
@@ -541,29 +799,31 @@ export default function App() {
                     )}
                   </div>
 
-                </div>
-              </div>
+                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
 
-              {/* Realtime Interactive Search Field */}
-              <div className="px-4 -mt-1.5">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-3 w-4.5 h-4.5 text-gray-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    placeholder="Buscar mouse, teclado, headset..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-[#08121a] border border-emerald-950/40 focus:border-emerald-500 text-xs font-semibold rounded-2xl py-3 pl-10 pr-4 text-white focus:outline-none transition-all placeholder-gray-500"
-                  />
-                  {searchQuery && (
-                    <button 
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3.5 top-2.5 p-1 text-gray-400 hover:text-white text-xs"
-                    >
-                      limpar
-                    </button>
-                  )}
+                  {/* SEARCH BAR inside the same green rectangle, enclosed in a dark gray box with white text and icon */}
+                  <div className="flex-[2] px-2.5">
+                    <div className="relative flex items-center bg-[#091118] rounded-lg border border-emerald-950/50">
+                      <Search className="absolute left-3 w-4 h-4 text-white pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Buscar mouse, teclado, headset..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-transparent text-white placeholder-gray-400 text-xs font-semibold pl-9 pr-8 py-2 focus:outline-none"
+                      />
+                      {searchQuery && (
+                        <button 
+                          onClick={() => setSearchQuery("")}
+                          className="absolute right-2.5 text-gray-400 hover:text-white font-bold text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
               </div>
 
               {/* Catalog Title Section Header matching reference Image 1 */}
@@ -588,8 +848,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* 2-Column Responsive Products Grid View */}
-              <div className="px-4 grid grid-cols-2 gap-3.5">
+              {/* Responsive Products Grid View (2 cols mobile, 3 cols tablet, 4 cols desktop) */}
+              <div className="px-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3.5 md:gap-4.5">
                 {(() => {
                   const displayList = searchQuery 
                     ? filteredProducts 
@@ -624,34 +884,33 @@ export default function App() {
                 })()}
               </div>
 
-              {/* Promotional Banner (1200x200px) */}
-              <div className="px-4 my-1 sm:my-3">
-                <div className="relative w-full rounded-2xl overflow-hidden shadow-xl border border-emerald-500/30 bg-[#06141a]">
-                  <Banner 
-                    banners={
-                      storeSettings.promoBanners && storeSettings.promoBanners.length > 0 
-                        ? storeSettings.promoBanners 
-                        : [
-                            {
-                              id: "promo-default",
-                              src: storeSettings.promoBannerUrl || "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=1200&q=80",
-                              alt: "Banner Promocional",
-                              active: true
-                            }
-                          ]
-                    } 
-                    aspectRatio="aspect-[4/1] md:aspect-[6/1]"
-                    className="w-full"
-                    onBannerClick={(banner) => {
-                      if (banner.linkGroup) {
-                        handleBannerClick(banner);
-                      } else {
-                        const text = encodeURIComponent("Olá! Vi o banner no site e gostaria de fazer uma encomenda ou tirar dúvida.");
-                        window.open(`https://wa.me/${storeSettings.whatsappNumber}?text=${text}`, "_blank");
-                      }
-                    }} 
-                  />
-                </div>
+              {/* Promotional Banner (1200x200px) - Hidden on desktop as requested */}
+              <div className="px-4 my-1 sm:my-3 md:hidden">
+                <Banner 
+                  banners={
+                    promoBanners && promoBanners.length > 0 ? promoBanners 
+                      : [
+                          {
+                            id: "promo-default",
+                            src: storeSettings.promoBannerUrl || "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=1200&q=80",
+                            alt: "Banner Promocional",
+                            active: true
+                          }
+                        ]
+                  } 
+                  aspectRatio="aspect-[4/1]"
+                  mobileRounded={true}
+                  mobileRoundedClasses="rounded-xl border border-emerald-500/25 shadow-lg"
+                  className="w-full"
+                  onBannerClick={(banner) => {
+                    if (banner.linkGroup) {
+                      handleBannerClick(banner);
+                    } else {
+                      const text = encodeURIComponent("Olá! Vi o banner no site e gostaria de fazer uma encomenda ou tirar dúvida.");
+                      window.open(`https://wa.me/${storeSettings.whatsappNumber}?text=${text}`, "_blank");
+                    }
+                  }} 
+                />
               </div>
 
               {/* Capas e Cases Section */}
@@ -692,7 +951,7 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="px-4 grid grid-cols-2 gap-3.5">
+                    <div className="px-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3.5 md:gap-4.5">
                       {capasList.map((p) => (
                         <ProductCard
                           key={p.id}
@@ -926,8 +1185,8 @@ export default function App() {
 
               </div>
 
-              {/* 2-Column Responsive Products Grid View */}
-              <div className="px-4 grid grid-cols-2 gap-3.5 mt-1 relative z-10">
+              {/* Responsive Products Grid View (2 cols mobile, 3 cols tablet, 4 cols desktop) */}
+              <div className="px-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3.5 md:gap-4.5 mt-1 relative z-10">
                 {filteredProducts.length === 0 ? (
                   <div className="col-span-2 text-center py-12 flex flex-col items-center justify-center gap-2 text-gray-500">
                     <Grid className="w-8 h-8 text-emerald-600 animate-pulse" />
@@ -960,6 +1219,70 @@ export default function App() {
                 >
                   ← Voltar para a Página Inicial
                 </button>
+              </div>
+            </motion.div>
+          )}
+
+          {currentView === "about" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="p-6 max-w-2xl mx-auto flex flex-col gap-6 w-full"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-emerald-950/40">
+                <button
+                  onClick={() => handleNavigate("home")}
+                  className="text-emerald-400 hover:text-emerald-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  ← Voltar para a Loja
+                </button>
+                <span className="text-xs text-gray-400 font-semibold uppercase tracking-widest">Sobre Nós</span>
+              </div>
+
+              <div className="bg-[#0b1622] border border-emerald-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col gap-6 text-center sm:text-left">
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                    <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="5" y="5" width="14" height="14" rx="2" />
+                      <path d="M9 9h6v6H9z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wider">{storeSettings.storeName || "Thyago Tech"}</h1>
+                    <p className="text-xs sm:text-sm text-emerald-400 font-semibold mt-1">{storeSettings.storeTagline || "Sua loja de tecnologia e acessórios"}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 text-sm text-gray-300 leading-relaxed text-left border-t border-b border-emerald-950/40 py-6">
+                  <p>
+                    Seja bem-vindo(a) à <strong className="text-white">{storeSettings.storeName || "Thyago Tech"}</strong>! Somos especialistas em trazer o melhor em tecnologia, acessórios para celular, capas, películas, periféricos gamer, eletrônicos e novidades para o seu dia a dia.
+                  </p>
+                  <p className="font-bold text-emerald-300 bg-emerald-950/20 p-4 rounded-xl border border-emerald-900/30">
+                    📍 Atendemos toda a Região Metropolitana do Recife e enviamos para todo o Brasil com rapidez e segurança!
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+                  <a
+                    href="https://instagram.com/Thyago.tech"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 text-white font-bold text-xs shadow-lg hover:opacity-90 transition-opacity"
+                  >
+                    <span>📷 Siga no Instagram: @Thyago.tech</span>
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      const phone = storeSettings.whatsappNumber || "5581997073882";
+                      window.open(`https://wa.me/${phone}?text=Olá! Vim pelo site e gostaria de tirar algumas dúvidas.`, "_blank");
+                    }}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs shadow-lg transition-colors cursor-pointer"
+                  >
+                    <span>💬 Falar no WhatsApp</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -998,8 +1321,14 @@ export default function App() {
                 <AdminPanel
                   products={products}
                   onSaveProducts={handleSaveProducts}
+                  sales={sales}
+                  onSaveSale={handleSaveSale}
+                  onUpdateSaleStatus={handleUpdateSaleStatus}
+                  onDeleteSale={handleDeleteSale}
                   banners={banners}
                   onSaveBanners={handleSaveBanners}
+                  promoBannersList={promoBanners}
+                  onSavePromoBanners={handleSavePromoBanners}
                   storeSettings={storeSettings}
                   onSaveSettings={handleSaveSettings}
                   onBack={() => handleNavigate("home")}
@@ -1163,8 +1492,8 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Bottom Floating Indicator bar mimicking simulated OS handle bar */}
-        <div className="sticky bottom-0 left-0 right-0 h-4 bg-[#05090f] flex items-center justify-center pointer-events-none z-40 border-t border-emerald-950/10">
+        {/* Bottom Floating Indicator bar mimicking simulated OS handle bar (Mobile only) */}
+        <div className="md:hidden sticky bottom-0 left-0 right-0 h-4 bg-[#05090f] flex items-center justify-center pointer-events-none z-40 border-t border-emerald-950/10">
           <div className="w-24 h-1 bg-gray-700/60 rounded-full" />
         </div>
 

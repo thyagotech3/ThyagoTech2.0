@@ -9,9 +9,13 @@ import {
   AlertTriangle, Video, Film, Play, ChevronLeft, ChevronRight,
   Palette, Settings, ShoppingBag, SlidersHorizontal, Clock, Phone,
   MapPin, CreditCard, Instagram, Store, RotateCcw, CheckCircle2, Link as LinkIcon,
-  ZoomIn, ZoomOut, Maximize2, Lock, Unlock, Search, Star
+  ZoomIn, ZoomOut, Maximize2, Lock, Unlock, Search, Star, Truck
 } from "lucide-react";
-import { Product, ColorStock, Specification, HighlightPoint, BannerItem, StoreSettings, defaultStoreSettings } from "../types";
+import { Product, ColorStock, Specification, HighlightPoint, BannerItem, StoreSettings, defaultStoreSettings, Sale } from "../types";
+import SalesPDV from "./SalesPDV";
+import StockManager from "./StockManager";
+import SalesHistory from "./SalesHistory";
+import OrderTracker from "./OrderTracker";
 import { initialBanners } from "../initialBanners";
 import { compressImage } from "../utils/imageCompressor";
 import { PHONE_BRANDS, PHONE_MODELS, PhoneBrand, isPhoneModelCategory } from "../phoneModels";
@@ -37,13 +41,30 @@ export const PRESET_VARIATION_COLORS = [
   { name: "Marrom", hex: "#78350F", preview: "#78350F" }
 ];
 
-export type AdminPageView = "menu" | "products" | "banners" | "orders" | "settings";
+export type AdminPageView = "menu" | "pos" | "stock" | "orders" | "orders-tracker" | "products" | "banners" | "settings";
 
 interface AdminPanelProps {
   products: Product[];
   onSaveProducts: (updatedProducts: Product[]) => void;
+  sales?: Sale[];
+  onSaveSale?: (sale: Sale) => Promise<void>;
+  onUpdateSaleStatus?: (
+    saleId: string, 
+    updates: { 
+      paymentStatus?: "pago" | "na_entrega" | "a_prazo"; 
+      status?: "concluida" | "cancelada";
+      orderStatus?: "aguardando_validacao" | "preparando" | "entregue" | "cancelado";
+      preparationTime?: string;
+      consultantName?: string;
+      notes?: string;
+      orderStatusHistory?: { status: string; timestamp: string; note?: string }[];
+    }
+  ) => Promise<void>;
+  onDeleteSale?: (saleId: string) => Promise<void>;
   banners?: BannerItem[];
   onSaveBanners?: (updatedBanners: BannerItem[]) => void;
+  promoBannersList?: BannerItem[];
+  onSavePromoBanners?: (updatedBanners: BannerItem[]) => void;
   storeSettings?: StoreSettings;
   onSaveSettings?: (updatedSettings: StoreSettings) => void;
   onBack: () => void;
@@ -52,8 +73,14 @@ interface AdminPanelProps {
 export default function AdminPanel({ 
   products, 
   onSaveProducts, 
+  sales = [],
+  onSaveSale,
+  onUpdateSaleStatus,
+  onDeleteSale,
   banners = initialBanners, 
-  onSaveBanners, 
+  onSaveBanners,
+  promoBannersList,
+  onSavePromoBanners,
   storeSettings,
   onSaveSettings,
   onBack 
@@ -189,20 +216,15 @@ export default function AdminPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Current banners list safe reference
-  const currentBanners = bannerSubView === "topo" 
+  const currentBanners = bannerSubView === "topo"
     ? (banners && banners.length > 0 ? banners : initialBanners)
-    : (storeSettings?.promoBanners || []);
+    : (promoBannersList || []);
 
   const saveBannersList = (updated: BannerItem[]) => {
     if (bannerSubView === "topo") {
       if (onSaveBanners) onSaveBanners(updated);
     } else {
-      if (onSaveSettings) {
-        onSaveSettings({ 
-          ...(storeSettings || defaultStoreSettings), 
-          promoBanners: updated 
-        });
-      }
+      if (onSavePromoBanners) onSavePromoBanners(updated);
     }
   };
 
@@ -665,12 +687,18 @@ export default function AdminPanel({
 
   const getPageTitle = () => {
     switch (adminView) {
+      case "pos":
+        return "Registrar Venda (PDV)";
+      case "orders-tracker":
+        return "Acompanhar Pedidos";
+      case "stock":
+        return "Controle de Estoque";
+      case "orders":
+        return "Histórico de Vendas";
       case "products":
         return "Editar Produtos";
       case "banners":
         return "Editar Banners";
-      case "orders":
-        return "Pedidos";
       case "settings":
         return "Configurações";
       default:
@@ -711,20 +739,140 @@ export default function AdminPanel({
         </span>
       </div>
 
-      <div className="max-w-md mx-auto px-4 pt-4 flex flex-col gap-4">
+      <div className="max-w-md md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto px-4 pt-4 flex flex-col gap-4">
         
         {/* ============================================================== */}
         {/* ==================== MAIN MENU VIEW ========================== */}
         {/* ============================================================== */}
-        {adminView === "menu" && (
-          <div className="flex flex-col gap-3">
+        {adminView === "menu" && (() => {
+          const countPendingVal = sales.filter((s) => s.orderStatus === "aguardando_validacao" || !s.orderStatus).length;
+          const countPrep = sales.filter((s) => s.orderStatus === "preparando").length;
+          const countActiveOrders = countPendingVal + countPrep;
+
+          return (
+          <div className="flex flex-col gap-3.5">
             <div className="pb-1">
               <h2 className="text-lg font-black text-white">Menu do Administrador</h2>
-              <p className="text-[11px] text-gray-400">Selecione uma categoria para gerenciar</p>
+              <p className="text-[11px] text-gray-400">Selecione uma opção para gerenciar suas vendas e estoque</p>
             </div>
 
-            <div className="flex flex-col gap-2.5">
-              {/* Option 1: Editar Produtos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* Option 1: Registrar Venda (PDV) - Highlighted */}
+              <button
+                id="btn-menu-pos"
+                onClick={() => setAdminView("pos")}
+                className="w-full text-left bg-gradient-to-r from-[#0c2419] to-[#08121a] hover:from-[#113324] hover:to-[#0c1c2a] border border-emerald-500/50 hover:border-emerald-400 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-lg"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-black flex items-center justify-center flex-shrink-0 group-hover:scale-110 shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all">
+                    <ShoppingBag className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black text-white group-hover:text-emerald-300 transition-colors">
+                        Registrar Venda (PDV)
+                      </h3>
+                      <span className="text-[9px] font-black bg-emerald-400 text-black px-2 py-0.5 rounded-md shadow-sm animate-pulse">
+                        LANÇAR
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-emerald-200/80 mt-0.5 truncate">
+                      Vendas no WhatsApp, retirada/entrega e baixa de estoque
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 2: Acompanhamento de Pedidos (Status Tracking) */}
+              <button
+                id="btn-menu-orders-tracker"
+                onClick={() => setAdminView("orders-tracker")}
+                className="w-full text-left bg-gradient-to-r from-[#0a1e2d] to-[#08121a] hover:from-[#0d273a] hover:to-[#0c1c2a] border border-sky-500/40 hover:border-sky-400/80 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-md"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-sky-500 group-hover:text-black transition-all shadow-sm">
+                    <Truck className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors">
+                        Acompanhar Pedidos
+                      </h3>
+                      {countActiveOrders > 0 ? (
+                        <span className="text-[9px] font-black bg-sky-400 text-black px-2 py-0.5 rounded-md shadow-xs animate-pulse flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-black"></span>
+                          {countActiveOrders} EM ANDAMENTO
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold bg-sky-950/80 text-sky-400 border border-sky-800/50 px-2 py-0.5 rounded-md">
+                          {sales.length} pedidos
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-300 mt-0.5 truncate">
+                      Validação (aguardando pagamento), preparação e entrega
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-sky-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 3: Controle de Estoque */}
+              <button
+                id="btn-menu-stock"
+                onClick={() => setAdminView("stock")}
+                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-teal-500 group-hover:text-black transition-all">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white group-hover:text-teal-300 transition-colors">
+                        Controle de Estoque
+                      </h3>
+                      <span className="text-[9px] font-extrabold bg-teal-950/80 text-teal-400 border border-teal-800/50 px-2 py-0.5 rounded-md">
+                        {products.reduce((sum, p) => sum + (Number(p.stock) || 0), 0)} un totais
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      Gestão em tempo real geral e por variação de cor
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-teal-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 4: Histórico de Vendas / Pedidos */}
+              <button
+                id="btn-menu-orders"
+                onClick={() => setAdminView("orders")}
+                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-amber-500 group-hover:text-black transition-all">
+                    <Clock className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                        Histórico de Vendas
+                      </h3>
+                      <span className="text-[9px] font-extrabold bg-amber-950/80 text-amber-400 border border-amber-800/50 px-2 py-0.5 rounded-md">
+                        {sales.length} registros
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                      Recebimentos, fiado a prazo, comprovantes e estornos
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </button>
+
+              {/* Option 5: Editar Produtos (Catálogo Completo) */}
               <button
                 id="btn-menu-products"
                 onClick={() => setAdminView("products")}
@@ -737,21 +885,21 @@ export default function AdminPanel({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors">
-                        Editar Produtos
+                        Catálogo de Produtos
                       </h3>
                       <span className="text-[9px] font-extrabold bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-md">
                         {products.length} itens
                       </span>
                     </div>
                     <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                      Estoque, fotos, preços e variações
+                      Adicionar novos produtos, fotos, descrição e tags
                     </p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
               </button>
 
-              {/* Option 2: Editar Banners */}
+              {/* Option 6: Editar Banners */}
               <button
                 id="btn-menu-banners"
                 onClick={() => setAdminView("banners")}
@@ -778,34 +926,7 @@ export default function AdminPanel({
                 <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
               </button>
 
-              {/* Option 3: Pedidos */}
-              <button
-                id="btn-menu-orders"
-                onClick={() => setAdminView("orders")}
-                className="w-full text-left bg-[#08121a] hover:bg-[#0c1c2a] border border-emerald-950/70 hover:border-emerald-500/40 p-3.5 rounded-2xl flex items-center justify-between transition-all group cursor-pointer shadow-sm"
-              >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:bg-amber-500 group-hover:text-black transition-all">
-                    <ShoppingBag className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
-                        Pedidos
-                      </h3>
-                      <span className="text-[9px] font-bold bg-amber-950/60 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded">
-                        Sem função por enquanto
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                      Histórico e controle de vendas
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
-              </button>
-
-              {/* Option 4: Configurações */}
+              {/* Option 7: Configurações */}
               <button
                 id="btn-menu-settings"
                 onClick={() => setAdminView("settings")}
@@ -818,7 +939,7 @@ export default function AdminPanel({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
-                        Configurações
+                        Configurações da Loja
                       </h3>
                       <span className="text-[9px] font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1">
                         <CheckCircle2 className="w-2.5 h-2.5" />
@@ -834,39 +955,61 @@ export default function AdminPanel({
               </button>
             </div>
           </div>
+          );
+        })()}
+
+        {/* ==================== ORDERS SECTION ========================== */}
+        {/* ============================================================== */}
+        {/* ============================================================== */}
+        {/* ==================== PDV / REGISTRAR VENDA =================== */}
+        {/* ============================================================== */}
+        {adminView === "pos" && (
+          <SalesPDV
+            products={products}
+            onSaveProducts={onSaveProducts}
+            onSaveSale={onSaveSale || (async () => {})}
+            onViewHistory={() => setAdminView("orders")}
+            onNavigateToTracker={() => setAdminView("orders-tracker")}
+          />
         )}
 
         {/* ============================================================== */}
-        {/* ==================== ORDERS SECTION ========================== */}
+        {/* ============= ACOMPANHAMENTO DE PEDIDOS ====================== */}
+        {/* ============================================================== */}
+        {adminView === "orders-tracker" && (
+          <OrderTracker
+            sales={sales}
+            products={products}
+            onSaveProducts={onSaveProducts}
+            onUpdateSaleStatus={onUpdateSaleStatus || (async () => {})}
+            onDeleteSale={onDeleteSale || (async () => {})}
+            onNavigateToPDV={() => setAdminView("pos")}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* ==================== CONTROLE DE ESTOQUE ===================== */}
+        {/* ============================================================== */}
+        {adminView === "stock" && (
+          <StockManager
+            products={products}
+            onSaveProducts={onSaveProducts}
+            onNavigateToPDV={() => setAdminView("pos")}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* ==================== HISTÓRICO DE VENDAS ===================== */}
         {/* ============================================================== */}
         {adminView === "orders" && (
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-black text-white">Pedidos</h2>
-                <p className="text-[10px] text-gray-400">Controle e acompanhamento de vendas</p>
-              </div>
-              <span className="text-[10px] font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2 py-1 rounded-lg">
-                Sem função por enquanto
-              </span>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-[#08121a] border border-emerald-950/70 flex flex-col items-center justify-center text-center gap-3 shadow-lg">
-              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center">
-                <ShoppingBag className="w-7 h-7" />
-              </div>
-              <h3 className="text-sm font-bold text-white">Central de Pedidos e Vendas</h3>
-              <p className="text-xs text-gray-400 max-w-xs leading-relaxed">
-                Este módulo está em preparação. Em breve você poderá gerenciar todas as mensagens de vendas do WhatsApp, aprovar pagamentos PIX/Cartão e dar baixa automática no estoque por aqui.
-              </p>
-              <button
-                onClick={() => setAdminView("menu")}
-                className="mt-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs transition-all cursor-pointer shadow-md"
-              >
-                Voltar ao Menu Principal
-              </button>
-            </div>
-          </div>
+          <SalesHistory
+            sales={sales}
+            products={products}
+            onSaveProducts={onSaveProducts}
+            onUpdateSaleStatus={onUpdateSaleStatus || (async () => {})}
+            onDeleteSale={onDeleteSale || (async () => {})}
+            onNavigateToPDV={() => setAdminView("pos")}
+          />
         )}
 
         {/* ============================================================== */}
@@ -1873,7 +2016,7 @@ export default function AdminPanel({
 
             {/* ---------------- PRODUCT LISTING VIEW ---------------- */}
             {!editingProduct && !isCreatingNew && (
-              <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {products.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-gray-800 p-8 text-center flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="w-8 h-8 text-emerald-500" />

@@ -86,6 +86,79 @@
         }
       },
       "required": ["title", "image"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Sale order record including customer, delivery/pickup, items, payment and stock deduction",
+      "type": "object",
+      "properties": {
+        "clientName": {
+          "type": "string",
+          "description": "Name of the customer",
+          "maxLength": 200
+        },
+        "clientPhone": {
+          "type": "string",
+          "description": "WhatsApp or phone of customer",
+          "maxLength": 50
+        },
+        "deliveryType": {
+          "type": "string",
+          "description": "Type of dispatch: entrega (delivery) or retirada (pickup)",
+          "enum": ["entrega", "retirada"]
+        },
+        "pickupLocation": {
+          "type": "string",
+          "description": "Meeting point or pickup location agreed with customer",
+          "maxLength": 300
+        },
+        "deliveryDate": {
+          "type": "string",
+          "description": "Delivery or meeting date (YYYY-MM-DD)",
+          "maxLength": 20
+        },
+        "subtotal": {
+          "type": "number",
+          "description": "Subtotal amount of products"
+        },
+        "deliveryFee": {
+          "type": "number",
+          "description": "Delivery fee charged"
+        },
+        "discount": {
+          "type": "number",
+          "description": "Discount applied"
+        },
+        "total": {
+          "type": "number",
+          "description": "Final total value of sale"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "description": "Payment method (pix, dinheiro, cartao_credito, etc.)",
+          "maxLength": 50
+        },
+        "paymentStatus": {
+          "type": "string",
+          "description": "Payment status: pago, na_entrega, a_prazo",
+          "enum": ["pago", "na_entrega", "a_prazo"]
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Due date if payment is a_prazo (YYYY-MM-DD)",
+          "maxLength": 20
+        },
+        "status": {
+          "type": "string",
+          "description": "Sale status: concluida or cancelada",
+          "enum": ["concluida", "cancelada"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp in ISO format"
+        }
+      },
+      "required": ["clientName", "deliveryType", "total", "paymentMethod", "paymentStatus"]
     }
   },
   "firestore": {
@@ -96,6 +169,14 @@
     "/banners/{bannerId}": {
       "schema": { "$ref": "#/entities/Banner" },
       "description": "Promotional billboard banners, editable only by Thyago (admin)"
+    },
+    "/promo_banners/{bannerId}": {
+      "schema": { "$ref": "#/entities/Banner" },
+      "description": "Promotional category banners, editable only by Thyago (admin)"
+    },
+    "/sales/{saleId}": {
+      "schema": { "$ref": "#/entities/Sale" },
+      "description": "Orders and sales PDV collection, accessible only by Thyago (admin)"
     }
   }
 }

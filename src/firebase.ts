@@ -17,7 +17,7 @@ import {
   onSnapshot, 
   serverTimestamp
 } from "firebase/firestore";
-import { Product, BannerItem, StoreSettings, defaultStoreSettings } from "./types";
+import { Product, BannerItem, StoreSettings, defaultStoreSettings, Sale, SaleItem } from "./types";
 import { initialProducts } from "./initialProducts";
 import { initialBanners } from "./initialBanners";
 import { compressImage } from "./utils/imageCompressor";
@@ -192,10 +192,12 @@ export function subscribeToBanners(
           title: data.title || "",
           linkGroup: data.linkGroup,
           linkFilter: data.linkFilter,
-          active: data.active !== undefined ? !!data.active : true
-        });
+          active: data.active !== undefined ? !!data.active : true,
+          order: typeof data.order === "number" ? data.order : 999
+        } as any);
       });
 
+      loadedBanners.sort((a: any, b: any) => a.order - b.order);
       onBannersUpdate(loadedBanners);
     },
     (err) => {
@@ -273,6 +275,79 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 /**
  * Save all banners to Firestore
  */
+
+/**
+ * Real-time listener for Promo Banners collection
+ */
+export function subscribeToPromoBanners(
+  onPromoBannersUpdate: (banners: BannerItem[]) => void,
+  onError?: (error: Error) => void
+) {
+  const bannersCol = collection(db, "promo_banners");
+
+  return onSnapshot(
+    bannersCol,
+    (snapshot) => {
+      const loadedBanners: BannerItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        loadedBanners.push({
+          id: docSnap.id,
+          src: data.src || "",
+          alt: data.alt || "Banner Promocional",
+          title: data.title || "",
+          linkGroup: data.linkGroup,
+          linkFilter: data.linkFilter,
+          active: data.active !== undefined ? !!data.active : true,
+          order: typeof data.order === 'number' ? data.order : 999
+        } as any);
+      });
+
+      loadedBanners.sort((a: any, b: any) => a.order - b.order);
+      onPromoBannersUpdate(loadedBanners);
+    },
+    (err) => {
+      console.warn("Notice: Firestore promo banners offline or initial sync:", err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Save all promo banners to Firestore
+ */
+export async function savePromoBannersToFirestore(banners: BannerItem[]): Promise<void> {
+  for (let i = 0; i < banners.length; i++) {
+    const banner = banners[i];
+    const docRef = doc(db, "promo_banners", banner.id);
+    await setDoc(docRef, {
+      src: banner.src,
+      alt: banner.alt,
+      title: banner.title || "",
+      linkGroup: banner.linkGroup || null,
+      linkFilter: banner.linkFilter || null,
+      active: banner.active !== false,
+      order: i
+    }, { merge: true });
+  }
+}
+
+/**
+ * Delete promo banner from Firestore
+ */
+export async function deletePromoBannerFromFirestore(bannerId: string): Promise<void> {
+  const docRef = doc(db, "promo_banners", bannerId);
+  await deleteDoc(docRef);
+}
+
+/**
+ * Delete banner from Firestore
+ */
+export async function deleteBannerFromFirestore(bannerId: string): Promise<void> {
+  const docRef = doc(db, "banners", bannerId);
+  await deleteDoc(docRef);
+}
+
 export async function saveBannersToFirestore(banners: BannerItem[]): Promise<void> {
   for (let i = 0; i < banners.length; i++) {
     const banner = banners[i];
@@ -460,4 +535,117 @@ export async function logoutUser(): Promise<void> {
     await signOut(auth);
   } catch (e) {}
   authListeners.forEach((listener) => listener(null));
+}
+
+
+/**
+ * Real-time listener for Sales collection
+ */
+export function subscribeToSales(
+  onSalesUpdate: (sales: Sale[]) => void,
+  onError?: (error: Error) => void
+) {
+  const salesCol = collection(db, "sales");
+  return onSnapshot(
+    salesCol,
+    (snapshot) => {
+      const loadedSales: Sale[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        loadedSales.push({
+          id: docSnap.id,
+          clientName: data.clientName || "",
+          clientPhone: data.clientPhone || "",
+          consultantName: data.consultantName || "",
+          deliveryType: data.deliveryType || "retirada",
+          deliveryAddress: data.deliveryAddress || undefined,
+          deliveryFee: Number(data.deliveryFee) || 0,
+          pickupLocation: data.pickupLocation || "",
+          deliveryDate: data.deliveryDate || new Date().toISOString().split("T")[0],
+          preparationTime: data.preparationTime || "",
+          estimatedDelivery: data.estimatedDelivery || "",
+          items: Array.isArray(data.items) ? data.items : [],
+          subtotal: Number(data.subtotal) || 0,
+          discount: Number(data.discount) || 0,
+          total: Number(data.total) || 0,
+          paymentMethod: data.paymentMethod || "pix",
+          paymentStatus: data.paymentStatus || "pago",
+          dueDate: data.dueDate || undefined,
+          notes: data.notes || "",
+          createdAt: data.createdAt || new Date().toISOString(),
+          status: data.status || "concluida",
+          orderStatus: data.orderStatus || (data.status === "cancelada" ? "cancelado" : data.paymentStatus === "pago" ? "preparando" : "aguardando_validacao"),
+          orderStatusHistory: Array.isArray(data.orderStatusHistory) ? data.orderStatusHistory : []
+        });
+      });
+      loadedSales.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      onSalesUpdate(loadedSales);
+    },
+    (err) => {
+      console.warn("Notice: Firestore sales sync:", err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Save single sale to Firestore
+ */
+export async function saveSaleToFirestore(sale: Sale): Promise<void> {
+  const docRef = doc(db, "sales", sale.id);
+  await setDoc(docRef, {
+    clientName: sale.clientName,
+    clientPhone: sale.clientPhone,
+    consultantName: sale.consultantName || "",
+    deliveryType: sale.deliveryType,
+    deliveryAddress: sale.deliveryAddress || null,
+    deliveryFee: Number(sale.deliveryFee) || 0,
+    pickupLocation: sale.pickupLocation || "",
+    deliveryDate: sale.deliveryDate,
+    preparationTime: sale.preparationTime || "",
+    estimatedDelivery: sale.estimatedDelivery || "",
+    items: sale.items,
+    subtotal: Number(sale.subtotal),
+    discount: Number(sale.discount) || 0,
+    total: Number(sale.total),
+    paymentMethod: sale.paymentMethod,
+    paymentStatus: sale.paymentStatus,
+    dueDate: sale.dueDate || null,
+    notes: sale.notes || "",
+    createdAt: sale.createdAt || new Date().toISOString(),
+    status: sale.status || "concluida",
+    orderStatus: sale.orderStatus || "aguardando_validacao",
+    orderStatusHistory: sale.orderStatusHistory || [],
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+/**
+ * Update sale status / payment status / order status
+ */
+export async function updateSaleStatusInFirestore(
+  saleId: string, 
+  updates: { 
+    paymentStatus?: "pago" | "na_entrega" | "a_prazo"; 
+    status?: "concluida" | "cancelada";
+    orderStatus?: "aguardando_validacao" | "preparando" | "entregue" | "cancelado";
+    preparationTime?: string;
+    consultantName?: string;
+    notes?: string;
+    orderStatusHistory?: { status: string; timestamp: string; note?: string }[];
+  }
+): Promise<void> {
+  const docRef = doc(db, "sales", saleId);
+  await setDoc(docRef, {
+    ...updates,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+/**
+ * Delete sale from Firestore
+ */
+export async function deleteSaleFromFirestore(saleId: string): Promise<void> {
+  const docRef = doc(db, "sales", saleId);
+  await deleteDoc(docRef);
 }

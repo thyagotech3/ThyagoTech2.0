@@ -84,3 +84,50 @@ export const defaultStoreSettings: StoreSettings = {
   promoBannerUrl: "",
   promoBanners: []
 };
+
+
+export interface SaleItem {
+  productId: string;
+  productName: string;
+  productImage?: string;
+  unitPrice: number;
+  quantity: number;
+  selectedColor?: string;
+  total: number;
+}
+
+export interface Sale {
+  id: string;
+  clientName: string;
+  clientPhone: string;
+  consultantName?: string; // Consultant / Seller who registered the sale
+  deliveryType: "entrega" | "retirada";
+  deliveryAddress?: {
+    street: string;
+    number: string;
+    neighborhood: string;
+    complement?: string;
+    city?: string;
+  };
+  deliveryFee?: number;
+  pickupLocation?: string;
+  deliveryDate: string; // YYYY-MM-DD
+  preparationTime?: string; // Estimated preparation time defined at sale time (e.g. "Hoje até 17h", "1 dia útil", "Pronta Entrega")
+  estimatedDelivery?: string;
+  items: SaleItem[];
+  subtotal: number;
+  discount?: number;
+  total: number;
+  paymentMethod: "pix" | "dinheiro" | "cartao_credito" | "cartao_debito" | "transferencia" | string;
+  paymentStatus: "pago" | "na_entrega" | "a_prazo";
+  dueDate?: string; // YYYY-MM-DD if a_prazo
+  notes?: string;
+  createdAt: string; // ISO string
+  status: "concluida" | "cancelada";
+  orderStatus?: "aguardando_validacao" | "preparando" | "entregue" | "cancelado";
+  orderStatusHistory?: {
+    status: string;
+    timestamp: string;
+    note?: string;
+  }[];
+}

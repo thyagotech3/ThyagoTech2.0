@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Search, ShoppingBag, Grid, RefreshCw, Layers, ArrowRight, ArrowLeft, ShieldAlert, Lock, CloudCheck, Sparkles, Star } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "firebase/auth";
@@ -61,6 +61,7 @@ export default function App() {
   const [selectedGroup, setSelectedGroup] = useState<"Todos" | "Celular" | "Pc" | "Videogame">("Todos");
   const [selectedFilter, setSelectedFilter] = useState<string>("Todos");
   const [activeDropdown, setActiveDropdown] = useState<"celular" | "pc" | "mais" | "groupSelect" | "filterSelect" | null>(null);
+  const dropdownTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Phone selection modal state for Capas & Películas categories
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
@@ -141,8 +142,6 @@ export default function App() {
       if (livePromoBanners && livePromoBanners.length > 0) {
         setPromoBanners(livePromoBanners);
         localStorage.setItem("thyago_tech_promo_banners", JSON.stringify(livePromoBanners));
-      } else {
-        setPromoBanners([]);
       }
     });
 
@@ -668,7 +667,7 @@ export default function App() {
                 </div>
 
                 {/* Desktop Unified Single Rectangle with Vertical Dividers */}
-                <div className="hidden md:flex items-center bg-emerald-500 rounded-xl border border-emerald-400 shadow-md overflow-visible text-black">
+                <div className="hidden md:flex items-center rounded-xl border border-[#00bc80] shadow-md overflow-visible text-black relative z-20" style={{ backgroundColor: '#00d492' }}>
                   {/* TODOS */}
                   <button
                     onClick={() => {
@@ -677,129 +676,179 @@ export default function App() {
                       setCurrentView("category");
                       setActiveDropdown(null);
                     }}
-                    className={`flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider text-center transition-colors cursor-pointer hover:bg-emerald-400 rounded-l-xl ${
-                      selectedGroup === "Todos" ? "bg-emerald-400 shadow-inner" : ""
-                    }`}
+                    style={{ backgroundColor: '#00d492' }}
+                    className="flex-1 px-4 py-3 text-xs font-black uppercase tracking-wider text-center transition-colors cursor-pointer hover:opacity-90 rounded-l-xl relative z-10"
                   >
                     Todos
                   </button>
 
-                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+                  <div className="w-[1px] h-5 bg-black/30 flex-shrink-0 relative z-15" />
 
                   {/* CELULAR */}
-                  <div className="flex-1 relative">
+                  <div 
+                    className="flex-1 relative"
+                    onMouseEnter={() => {
+                      if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
+                      setActiveDropdown("celular");
+                    }}
+                    onMouseLeave={() => {
+                      dropdownTimeoutRef.current = setTimeout(() => {
+                        setActiveDropdown(null);
+                      }, 500);
+                    }}
+                  >
                     <button
                       onClick={() => setActiveDropdown(activeDropdown === "celular" ? null : "celular")}
-                      className={`w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:bg-emerald-400 ${
-                        selectedGroup === "Celular" ? "bg-emerald-400 shadow-inner" : ""
-                      }`}
+                      style={{ backgroundColor: '#00d492' }}
+                      className="w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:opacity-90 relative z-10"
                     >
                       <span>Celular</span>
                       <span className="text-[9px]">▼</span>
                     </button>
 
                     {activeDropdown === "celular" && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
-                        <div className="absolute left-0 mt-2 min-w-[160px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white">
-                          {["Todos", "Celular", "Capas", "películas", "Fones", "Carregadores", "Cabos"].map((sub) => (
-                            <button
-                              key={sub}
-                              onClick={() => {
-                                setSelectedGroup("Celular");
-                                setSelectedFilter(sub);
-                                setCurrentView("category");
-                                setActiveDropdown(null);
-                                if (sub === "Capas") {
-                                  setIsPhoneModalOpen(true);
-                                  setModalStep(1);
-                                }
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
-                            >
-                              {sub}
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                      <div 
+                        className="absolute left-0 mt-1 min-w-[160px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white"
+                        onMouseEnter={() => {
+                          if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
+                        }}
+                        onMouseLeave={() => {
+                          dropdownTimeoutRef.current = setTimeout(() => {
+                            setActiveDropdown(null);
+                          }, 500);
+                        }}
+                      >
+                        {["Todos", "Celular", "Capas", "películas", "Fones", "Carregadores", "Cabos"].map((sub) => (
+                          <button
+                            key={sub}
+                            onClick={() => {
+                              setSelectedGroup("Celular");
+                              setSelectedFilter(sub);
+                              setCurrentView("category");
+                              setActiveDropdown(null);
+                              if (sub === "Capas") {
+                                setIsPhoneModalOpen(true);
+                                setModalStep(1);
+                              }
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate cursor-pointer"
+                          >
+                            {sub}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
 
-                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+                  <div className="w-[1px] h-5 bg-black/30 flex-shrink-0 relative z-15" />
 
                   {/* PC */}
-                  <div className="flex-1 relative">
+                  <div 
+                    className="flex-1 relative"
+                    onMouseEnter={() => {
+                      if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
+                      setActiveDropdown("pc");
+                    }}
+                    onMouseLeave={() => {
+                      dropdownTimeoutRef.current = setTimeout(() => {
+                        setActiveDropdown(null);
+                      }, 500);
+                    }}
+                  >
                     <button
                       onClick={() => setActiveDropdown(activeDropdown === "pc" ? null : "pc")}
-                      className={`w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:bg-emerald-400 ${
-                        selectedGroup === "Pc" ? "bg-emerald-400 shadow-inner" : ""
-                      }`}
+                      style={{ backgroundColor: '#00d492' }}
+                      className="w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:opacity-90 relative z-10"
                     >
                       <span>PC</span>
                       <span className="text-[9px]">▼</span>
                     </button>
 
                     {activeDropdown === "pc" && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
-                        <div className="absolute left-0 mt-2 min-w-[160px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white">
-                          {["Todos", "Pc", "Mouse", "Teclado", "Fone", "Headset"].map((sub) => (
-                            <button
-                              key={sub}
-                              onClick={() => {
-                                setSelectedGroup("Pc");
-                                setSelectedFilter(sub);
-                                setCurrentView("category");
-                                setActiveDropdown(null);
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
-                            >
-                              {sub}
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                      <div 
+                        className="absolute left-0 mt-1 min-w-[160px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white"
+                        onMouseEnter={() => {
+                          if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
+                        }}
+                        onMouseLeave={() => {
+                          dropdownTimeoutRef.current = setTimeout(() => {
+                            setActiveDropdown(null);
+                          }, 500);
+                        }}
+                      >
+                        {["Todos", "Pc", "Mouse", "Teclado", "Fone", "Headset"].map((sub) => (
+                          <button
+                            key={sub}
+                            onClick={() => {
+                              setSelectedGroup("Pc");
+                              setSelectedFilter(sub);
+                              setCurrentView("category");
+                              setActiveDropdown(null);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate cursor-pointer"
+                          >
+                            {sub}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
 
-                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+                  <div className="w-[1px] h-5 bg-black/30 flex-shrink-0 relative z-15" />
 
                   {/* MAIS */}
-                  <div className="flex-1 relative">
+                  <div 
+                    className="flex-1 relative"
+                    onMouseEnter={() => {
+                      if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
+                      setActiveDropdown("mais");
+                    }}
+                    onMouseLeave={() => {
+                      dropdownTimeoutRef.current = setTimeout(() => {
+                        setActiveDropdown(null);
+                      }, 500);
+                    }}
+                  >
                     <button
                       onClick={() => setActiveDropdown(activeDropdown === "mais" ? null : "mais")}
-                      className={`w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:bg-emerald-400 ${
-                        selectedGroup === "Videogame" ? "bg-emerald-400 shadow-inner" : ""
-                      }`}
+                      style={{ backgroundColor: '#00d492' }}
+                      className="w-full flex items-center justify-center gap-1.5 px-4 py-3 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer hover:opacity-90 relative z-10"
                     >
                       <span>Mais</span>
                       <span className="text-[9px]">▼</span>
                     </button>
 
                     {activeDropdown === "mais" && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
-                        <div className="absolute right-0 mt-2 min-w-[180px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white">
-                          {["Videogames", "Camisetas (Novo)", "Tênis (Novo)"].map((sub) => (
-                            <button
-                              key={sub}
-                              onClick={() => {
-                                setSelectedGroup("Videogame");
-                                setSelectedFilter(sub);
-                                setCurrentView("category");
-                                setActiveDropdown(null);
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate"
-                            >
-                              {sub}
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                      <div 
+                        className="absolute right-0 mt-1 min-w-[180px] bg-[#0b1620] border border-emerald-500/30 rounded-xl py-1.5 shadow-2xl z-50 text-left text-white"
+                        onMouseEnter={() => {
+                          if (dropdownTimeoutRef.current) clearTimeout(dropdownTimeoutRef.current);
+                        }}
+                        onMouseLeave={() => {
+                          dropdownTimeoutRef.current = setTimeout(() => {
+                            setActiveDropdown(null);
+                          }, 500);
+                        }}
+                      >
+                        {["Videogames", "Camisetas (Novo)", "Tênis (Novo)"].map((sub) => (
+                          <button
+                            key={sub}
+                            onClick={() => {
+                              setSelectedGroup("Videogame");
+                              setSelectedFilter(sub);
+                              setCurrentView("category");
+                              setActiveDropdown(null);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-emerald-500 hover:text-black font-semibold transition-colors truncate cursor-pointer"
+                          >
+                            {sub}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
 
-                  <div className="w-[1px] h-5 bg-black/25 flex-shrink-0" />
+                  <div className="w-[1px] h-5 bg-black/30 flex-shrink-0 relative z-15" />
 
                   {/* SEARCH BAR inside the same green rectangle, enclosed in a dark gray box with white text and icon */}
                   <div className="flex-[2] px-2.5">
@@ -884,8 +933,8 @@ export default function App() {
                 })()}
               </div>
 
-              {/* Promotional Banner (1200x200px) - Hidden on desktop as requested */}
-              <div className="px-4 my-1 sm:my-3 md:hidden">
+              {/* Promotional Banner */}
+              <div className="px-4 my-2 sm:my-4">
                 <Banner 
                   banners={
                     promoBanners && promoBanners.length > 0 ? promoBanners 
@@ -898,10 +947,10 @@ export default function App() {
                           }
                         ]
                   } 
-                  aspectRatio="aspect-[4/1]"
+                  aspectRatio="aspect-[4/1] md:aspect-[6/1]"
                   mobileRounded={true}
-                  mobileRoundedClasses="rounded-xl border border-emerald-500/25 shadow-lg"
-                  className="w-full"
+                  mobileRoundedClasses="rounded-2xl border border-emerald-500/30 shadow-xl"
+                  className="w-full max-w-7xl mx-auto"
                   onBannerClick={(banner) => {
                     if (banner.linkGroup) {
                       handleBannerClick(banner);

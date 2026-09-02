@@ -319,9 +319,21 @@ export function subscribeToPromoBanners(
 export async function savePromoBannersToFirestore(banners: BannerItem[]): Promise<void> {
   for (let i = 0; i < banners.length; i++) {
     const banner = banners[i];
+    let imageSrc = banner.src;
+    if (typeof imageSrc === "string" && imageSrc.startsWith("data:image/") && imageSrc.length > 200000) {
+      try {
+        imageSrc = await compressImage(imageSrc, {
+          maxWidth: 1200,
+          maxHeight: 600,
+          quality: 0.80
+        });
+      } catch (e) {
+        console.warn("Failed to compress promo banner image:", e);
+      }
+    }
     const docRef = doc(db, "promo_banners", banner.id);
     await setDoc(docRef, {
-      src: banner.src,
+      src: imageSrc,
       alt: banner.alt,
       title: banner.title || "",
       linkGroup: banner.linkGroup || null,

@@ -139,7 +139,7 @@ export default function App() {
 
     
     const unsubscribePromoBanners = subscribeToPromoBanners((livePromoBanners) => {
-      if (livePromoBanners && livePromoBanners.length > 0) {
+      if (livePromoBanners) {
         setPromoBanners(livePromoBanners);
         localStorage.setItem("thyago_tech_promo_banners", JSON.stringify(livePromoBanners));
       }
